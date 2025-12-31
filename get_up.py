@@ -6,7 +6,7 @@ import duckdb
 import pendulum
 import requests
 import telebot
-from github import Github
+from github import Auth, Github
 from telegramify_markdown import markdownify
 
 # 1 real get up #5 for test
@@ -35,7 +35,7 @@ TIMEZONE = "Asia/Shanghai"
 
 
 def login(token):
-    return Github(token)
+    return Github(auth=Auth.Token(token))
 
 
 def get_one_sentence():
@@ -336,14 +336,13 @@ def get_year_progress():
 def get_today_get_up_status(issue):
     comments = list(issue.get_comments())
     if not comments:
-        return False, []
+        return False
     latest_comment = comments[-1]
     now = pendulum.now(TIMEZONE)
     latest_day = pendulum.instance(latest_comment.created_at).in_timezone(
         "Asia/Shanghai"
     )
-    is_today = (latest_day.day == now.day) and (latest_day.month == now.month)
-    return is_today
+    return latest_day.date() == now.date()
 
 
 def make_get_up_message(github_token):
