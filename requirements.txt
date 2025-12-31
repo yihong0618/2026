@@ -1,0 +1,10 @@
+PyGithub
+requests
+pendulum
+rich
+openai
+pyTelegramBotAPI
+telegramify-markdown
+kling-creator
+wcwidth
+duckdb
