@@ -14,4 +14,5 @@ dependencies = [
     "rich>=14.1.0",
     "telegramify-markdown>=0.5.1",
     "wcwidth>=0.2.13",
+    "zhconv>=1.4.3",
 ]
