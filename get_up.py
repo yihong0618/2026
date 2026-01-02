@@ -25,6 +25,8 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 {history_today}
 
+{street_view}
+
 今天的一首诗:
 
 {sentence}
@@ -92,6 +94,75 @@ def get_one_sentence():
     except Exception as e:
         print(f"get SENTENCE_API wrong: {e}")
         return DEFAULT_SENTENCE
+
+
+def get_random_street_view():
+    """获取今天的随机街景
+
+    使用 RandomStreetView 网站，每次访问都会显示一个随机的街景位置
+    中国大陆使用腾讯街景
+
+    Returns:
+        str: 格式化的街景信息，失败时返回空字符串
+    """
+    try:
+        # 使用 randomstreetview.com，每次点击都会随机显示该国家/地区的街景
+        sites = [
+            ("🇯🇵 日本", "https://randomstreetview.com/#jpn"),
+            ("🇮🇹 意大利", "https://randomstreetview.com/#ita"),
+            ("🇫🇷 法国", "https://randomstreetview.com/#fra"),
+            ("🇬🇧 英国", "https://randomstreetview.com/#gbr"),
+            ("🇺🇸 美国", "https://randomstreetview.com/#usa"),
+            ("🇦🇺 澳大利亚", "https://randomstreetview.com/#aus"),
+            ("🇧🇷 巴西", "https://randomstreetview.com/#bra"),
+            ("🇿🇦 南非", "https://randomstreetview.com/#zaf"),
+            ("🇹🇭 泰国", "https://randomstreetview.com/#tha"),
+            ("🇲🇽 墨西哥", "https://randomstreetview.com/#mex"),
+            ("🇪🇸 西班牙", "https://randomstreetview.com/#esp"),
+            ("🇩🇪 德国", "https://randomstreetview.com/#deu"),
+            ("🇵🇹 葡萄牙", "https://randomstreetview.com/#prt"),
+            ("🇳🇴 挪威", "https://randomstreetview.com/#nor"),
+            ("🇸🇪 瑞典", "https://randomstreetview.com/#swe"),
+            ("🇫🇮 芬兰", "https://randomstreetview.com/#fin"),
+            ("🇵🇱 波兰", "https://randomstreetview.com/#pol"),
+            ("🇨🇿 捷克", "https://randomstreetview.com/#cze"),
+            ("🇬🇷 希腊", "https://randomstreetview.com/#grc"),
+            ("🇹🇷 土耳其", "https://randomstreetview.com/#tur"),
+            ("🇷🇺 俄罗斯", "https://randomstreetview.com/#rus"),
+            ("🇦🇷 阿根廷", "https://randomstreetview.com/#arg"),
+            ("🇨🇱 智利", "https://randomstreetview.com/#chl"),
+            ("🇨🇴 哥伦比亚", "https://randomstreetview.com/#col"),
+            ("🇵🇪 秘鲁", "https://randomstreetview.com/#per"),
+            ("🇮🇩 印尼", "https://randomstreetview.com/#idn"),
+            ("🇲🇾 马来西亚", "https://randomstreetview.com/#mys"),
+            ("🇸🇬 新加坡", "https://randomstreetview.com/#sgp"),
+            ("🇵🇭 菲律宾", "https://randomstreetview.com/#phl"),
+            ("🇹🇼 台湾", "https://randomstreetview.com/#twn"),
+            ("🇭🇰 香港", "https://randomstreetview.com/#hkg"),
+            ("🇰🇷 韩国", "https://randomstreetview.com/#kor"),
+            ("🇮🇱 以色列", "https://randomstreetview.com/#isr"),
+            ("🇦🇪 阿联酋", "https://randomstreetview.com/#are"),
+            ("🇮🇪 爱尔兰", "https://randomstreetview.com/#irl"),
+            ("🇳🇱 荷兰", "https://randomstreetview.com/#nld"),
+            ("🇧🇪 比利时", "https://randomstreetview.com/#bel"),
+            ("🇨🇭 瑞士", "https://randomstreetview.com/#che"),
+            ("🇦🇹 奥地利", "https://randomstreetview.com/#aut"),
+            ("🌍 全球随机", "https://randomstreetview.com/"),
+        ]
+
+        # 用日期作为种子，确保同一天显示同一个地点
+        now = pendulum.now(TIMEZONE)
+        day_seed = now.year * 1000 + now.day_of_year
+        random.seed(day_seed)
+        name, url = random.choice(sites)
+        random.seed()  # 重置随机种子，不影响其他随机调用
+
+        return f"""今日街景：{name}
+
+[开始随机街景之旅]({url})"""
+    except Exception as e:
+        print(f"Error getting random street view: {e}")
+        return ""
 
 
 def get_history_today(birth_year=BIRTH_YEAR, limit=3):
@@ -503,6 +574,7 @@ def make_get_up_message(github_token):
     year_progress = get_year_progress()
     running_info = get_running_distance()
     history_today = get_history_today()
+    street_view = get_random_street_view()
 
     return (
         sentence,
@@ -511,6 +583,7 @@ def make_get_up_message(github_token):
         year_progress,
         running_info,
         history_today,
+        street_view,
     )
 
 
@@ -542,6 +615,7 @@ def main(
         year_progress,
         running_info,
         history_today,
+        street_view,
     ) = make_get_up_message(github_token)
     get_up_time = pendulum.now(TIMEZONE).to_datetime_string()
 
@@ -552,6 +626,7 @@ def main(
         year_progress=year_progress,
         running_info=running_info,
         history_today=history_today,
+        street_view=street_view,
     )
 
     if is_get_up_early:
