@@ -108,9 +108,51 @@ def _get_script_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 
+def _get_leetcode_daily_question():
+    """获取 LeetCode CN 每日一题
+
+    Returns:
+        dict: 包含 id, title, slug, difficulty 的字典，失败返回 None
+    """
+    try:
+        url = "https://leetcode.cn/graphql/"
+        headers = {"Content-Type": "application/json"}
+        query = """
+        query questionOfToday {
+            todayRecord {
+                question {
+                    questionFrontendId
+                    title
+                    titleSlug
+                    difficulty
+                    isPaidOnly
+                }
+            }
+        }
+        """
+        response = requests.post(url, json={"query": query}, headers=headers, timeout=10)
+        if response.ok:
+            data = response.json()
+            records = data.get("data", {}).get("todayRecord", [])
+            if records:
+                q = records[0].get("question", {})
+                if q and not q.get("isPaidOnly", False):
+                    return {
+                        "id": q.get("questionFrontendId", ""),
+                        "title": q.get("title", ""),
+                        "slug": q.get("titleSlug", ""),
+                        "difficulty": q.get("difficulty", "").upper(),  # EASY, MEDIUM, HARD
+                    }
+        return None
+    except Exception as e:
+        print(f"Error getting daily question: {e}")
+        return None
+
+
 def get_daily_leetcode():
     """获取今日 LeetCode 题目
 
+    优先使用 LeetCode 官方每日一题（如果难度符合且未做过）。
     周四（疯狂星期四）出中等题，其他日子出简单题。
     使用文件记录已出过的题目，避免重复。
 
@@ -135,47 +177,64 @@ def get_daily_leetcode():
             with open(used_file, "r") as f:
                 used_slugs = set(line.strip() for line in f if line.strip())
 
-        # 选择题库文件
+        # 确定今天需要的难度
         if is_thursday:
-            problem_file = medium_file
+            target_difficulty = "MEDIUM"
             difficulty = "中等"
             difficulty_emoji = "🟡"
             hint = "🍗 疯狂星期四！"
+            problem_file = medium_file
         else:
-            problem_file = easy_file
+            target_difficulty = "EASY"
             difficulty = "简单"
             difficulty_emoji = "🟢"
             hint = ""
+            problem_file = easy_file
 
-        # 读取题目列表
-        if not os.path.exists(problem_file):
-            return "📚 今日 LeetCode：题库文件不存在，请运行 fetch_leetcode.py 获取题目"
+        # 尝试获取官方每日一题
+        daily_question = _get_leetcode_daily_question()
+        use_daily = False
+        if daily_question:
+            # 检查难度是否符合，且未做过
+            if (daily_question["difficulty"] == target_difficulty and 
+                daily_question["slug"] not in used_slugs):
+                use_daily = True
+                problem_id = daily_question["id"]
+                title = daily_question["title"]
+                slug = daily_question["slug"]
+                hint = "📅 今日官方每日一题！" + (f" {hint}" if hint else "")
 
-        with open(problem_file, "r") as f:
-            problems = [line.strip() for line in f if line.strip()]
+        # 如果不能用每日一题，从题库随机选择
+        if not use_daily:
+            # 读取题目列表
+            if not os.path.exists(problem_file):
+                return "📚 今日 LeetCode：题库文件不存在，请运行 fetch_leetcode.py 获取题目"
 
-        # 过滤掉已使用的题目
-        available = []
-        for p in problems:
-            parts = p.split("|")
-            if len(parts) >= 3:
-                slug = parts[2]
-                if slug not in used_slugs:
-                    available.append(p)
+            with open(problem_file, "r") as f:
+                problems = [line.strip() for line in f if line.strip()]
 
-        if not available:
-            return f"📚 今日 LeetCode：所有{difficulty}题都做完啦！🎉"
+            # 过滤掉已使用的题目
+            available = []
+            for p in problems:
+                parts = p.split("|")
+                if len(parts) >= 3:
+                    slug = parts[2]
+                    if slug not in used_slugs:
+                        available.append(p)
 
-        # 用日期作为种子，确保同一天显示同一道题
-        day_seed = now.year * 1000 + now.day_of_year
-        random.seed(day_seed)
-        selected = random.choice(available)
-        random.seed()  # 重置随机种子
+            if not available:
+                return f"📚 今日 LeetCode：所有{difficulty}题都做完啦！🎉"
 
-        parts = selected.split("|")
-        problem_id = parts[0]
-        title = parts[1]
-        slug = parts[2]
+            # 用日期作为种子，确保同一天显示同一道题
+            day_seed = now.year * 1000 + now.day_of_year
+            random.seed(day_seed)
+            selected = random.choice(available)
+            random.seed()  # 重置随机种子
+
+            parts = selected.split("|")
+            problem_id = parts[0]
+            title = parts[1]
+            slug = parts[2]
 
         # 记录已使用的题目
         with open(used_file, "a") as f:
@@ -592,8 +651,8 @@ def get_today_get_up_status(issue):
 def make_get_up_message(github_token):
     sentence = get_one_sentence()
     now = pendulum.now(TIMEZONE)
-    # 3 - 7 means early for me
-    ###  make it to 9 in 2024.10.15 for maybe I forgot it ###
+    # 3 - 9 means early for me
+    # 3 means 我喝多了起来上厕所
     is_get_up_early = 3 <= now.hour <= 9
     try:
         sentence = get_one_sentence()
