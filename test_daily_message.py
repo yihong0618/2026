@@ -15,6 +15,7 @@ from get_up import (
     get_year_progress,
     get_running_distance,
     get_history_today,
+    get_daily_leetcode,
     make_get_up_message,
 )
 
@@ -34,6 +35,7 @@ def test_full_message():
         year_progress,
         running_info,
         history_today,
+        leetcode,
     ) = make_get_up_message(None)
 
     get_up_time = pendulum.now(TIMEZONE).to_datetime_string()
@@ -45,6 +47,7 @@ def test_full_message():
         year_progress=year_progress,
         running_info=running_info,
         history_today=history_today,
+        leetcode=leetcode,
     )
 
     print(body)
@@ -85,7 +88,15 @@ def test_individual_components():
         print("   无法获取历史事件")
     print()
 
-    print("📖 每日一诗:")
+    print("� 今日 LeetCode:")
+    leetcode = get_daily_leetcode()
+    if leetcode:
+        print(f"   {leetcode}")
+    else:
+        print("   无法获取 LeetCode 题目")
+    print()
+
+    print("�📖 每日一诗:")
     sentence = get_one_sentence()
     print(f"   {sentence}")
     print()

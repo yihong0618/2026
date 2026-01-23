@@ -25,12 +25,17 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 {history_today}
 
-{street_view}
+{leetcode}
 
 今天的一首诗:
 
 {sentence}
 """
+
+# LeetCode 题目文件路径
+LEETCODE_EASY_FILE = "leetcode_easy.txt"
+LEETCODE_MEDIUM_FILE = "leetcode_medium.txt"
+LEETCODE_USED_FILE = "leetcode_used.txt"
 # 使用 v2 API 获取完整诗词
 SENTENCE_API = "https://v2.jinrishici.com/one.json"
 
@@ -96,72 +101,92 @@ def get_one_sentence():
         return DEFAULT_SENTENCE
 
 
-def get_random_street_view():
-    """获取今天的随机街景
+def _get_script_dir():
+    """获取脚本所在目录"""
+    import os
 
-    使用 RandomStreetView 网站，每次访问都会显示一个随机的街景位置
-    中国大陆使用腾讯街景
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_daily_leetcode():
+    """获取今日 LeetCode 题目
+
+    周三出中等题，其他日子出简单题。
+    使用文件记录已出过的题目，避免重复。
 
     Returns:
-        str: 格式化的街景信息，失败时返回空字符串
+        str: 格式化的 LeetCode 题目信息
     """
-    try:
-        # 使用 randomstreetview.com，每次点击都会随机显示该国家/地区的街景
-        sites = [
-            ("🇯🇵 日本", "https://randomstreetview.com/#jpn"),
-            ("🇮🇹 意大利", "https://randomstreetview.com/#ita"),
-            ("🇫🇷 法国", "https://randomstreetview.com/#fra"),
-            ("🇬🇧 英国", "https://randomstreetview.com/#gbr"),
-            ("🇺🇸 美国", "https://randomstreetview.com/#usa"),
-            ("🇦🇺 澳大利亚", "https://randomstreetview.com/#aus"),
-            ("🇧🇷 巴西", "https://randomstreetview.com/#bra"),
-            ("🇿🇦 南非", "https://randomstreetview.com/#zaf"),
-            ("🇹🇭 泰国", "https://randomstreetview.com/#tha"),
-            ("🇲🇽 墨西哥", "https://randomstreetview.com/#mex"),
-            ("🇪🇸 西班牙", "https://randomstreetview.com/#esp"),
-            ("🇩🇪 德国", "https://randomstreetview.com/#deu"),
-            ("🇵🇹 葡萄牙", "https://randomstreetview.com/#prt"),
-            ("🇳🇴 挪威", "https://randomstreetview.com/#nor"),
-            ("🇸🇪 瑞典", "https://randomstreetview.com/#swe"),
-            ("🇫🇮 芬兰", "https://randomstreetview.com/#fin"),
-            ("🇵🇱 波兰", "https://randomstreetview.com/#pol"),
-            ("🇨🇿 捷克", "https://randomstreetview.com/#cze"),
-            ("🇬🇷 希腊", "https://randomstreetview.com/#grc"),
-            ("🇹🇷 土耳其", "https://randomstreetview.com/#tur"),
-            ("🇷🇺 俄罗斯", "https://randomstreetview.com/#rus"),
-            ("🇦🇷 阿根廷", "https://randomstreetview.com/#arg"),
-            ("🇨🇱 智利", "https://randomstreetview.com/#chl"),
-            ("🇨🇴 哥伦比亚", "https://randomstreetview.com/#col"),
-            ("🇵🇪 秘鲁", "https://randomstreetview.com/#per"),
-            ("🇮🇩 印尼", "https://randomstreetview.com/#idn"),
-            ("🇲🇾 马来西亚", "https://randomstreetview.com/#mys"),
-            ("🇸🇬 新加坡", "https://randomstreetview.com/#sgp"),
-            ("🇵🇭 菲律宾", "https://randomstreetview.com/#phl"),
-            ("🇹🇼 台湾", "https://randomstreetview.com/#twn"),
-            ("🇭🇰 香港", "https://randomstreetview.com/#hkg"),
-            ("🇰🇷 韩国", "https://randomstreetview.com/#kor"),
-            ("🇮🇱 以色列", "https://randomstreetview.com/#isr"),
-            ("🇦🇪 阿联酋", "https://randomstreetview.com/#are"),
-            ("🇮🇪 爱尔兰", "https://randomstreetview.com/#irl"),
-            ("🇳🇱 荷兰", "https://randomstreetview.com/#nld"),
-            ("🇧🇪 比利时", "https://randomstreetview.com/#bel"),
-            ("🇨🇭 瑞士", "https://randomstreetview.com/#che"),
-            ("🇦🇹 奥地利", "https://randomstreetview.com/#aut"),
-            ("🌍 全球随机", "https://randomstreetview.com/"),
-        ]
+    import os
 
-        # 用日期作为种子，确保同一天显示同一个地点
+    try:
+        script_dir = _get_script_dir()
+        easy_file = os.path.join(script_dir, LEETCODE_EASY_FILE)
+        medium_file = os.path.join(script_dir, LEETCODE_MEDIUM_FILE)
+        used_file = os.path.join(script_dir, LEETCODE_USED_FILE)
+
         now = pendulum.now(TIMEZONE)
+        # 周三是 3 (pendulum: Monday=1, ..., Wednesday=3, ..., Sunday=7)
+        is_wednesday = now.day_of_week == 3
+
+        # 读取已使用的题目
+        used_slugs = set()
+        if os.path.exists(used_file):
+            with open(used_file, "r") as f:
+                used_slugs = set(line.strip() for line in f if line.strip())
+
+        # 选择题库文件
+        if is_wednesday:
+            problem_file = medium_file
+            difficulty = "中等"
+            difficulty_emoji = "🟡"
+        else:
+            problem_file = easy_file
+            difficulty = "简单"
+            difficulty_emoji = "🟢"
+
+        # 读取题目列表
+        if not os.path.exists(problem_file):
+            return "📚 今日 LeetCode：题库文件不存在，请运行 fetch_leetcode.py 获取题目"
+
+        with open(problem_file, "r") as f:
+            problems = [line.strip() for line in f if line.strip()]
+
+        # 过滤掉已使用的题目
+        available = []
+        for p in problems:
+            parts = p.split("|")
+            if len(parts) >= 3:
+                slug = parts[2]
+                if slug not in used_slugs:
+                    available.append(p)
+
+        if not available:
+            return f"📚 今日 LeetCode：所有{difficulty}题都做完啦！🎉"
+
+        # 用日期作为种子，确保同一天显示同一道题
         day_seed = now.year * 1000 + now.day_of_year
         random.seed(day_seed)
-        name, url = random.choice(sites)
-        random.seed()  # 重置随机种子，不影响其他随机调用
+        selected = random.choice(available)
+        random.seed()  # 重置随机种子
 
-        return f"""今日街景：{name}
+        parts = selected.split("|")
+        problem_id = parts[0]
+        title = parts[1]
+        slug = parts[2]
 
-[开始随机街景之旅]({url})"""
+        # 记录已使用的题目
+        with open(used_file, "a") as f:
+            f.write(f"{slug}\n")
+
+        url = f"https://leetcode.cn/problems/{slug}/"
+
+        return f"""📚 今日 LeetCode {difficulty_emoji} {difficulty}题：
+
+[{problem_id}. {title}]({url})"""
+
     except Exception as e:
-        print(f"Error getting random street view: {e}")
+        print(f"Error getting daily leetcode: {e}")
         return ""
 
 
@@ -574,7 +599,7 @@ def make_get_up_message(github_token):
     year_progress = get_year_progress()
     running_info = get_running_distance()
     history_today = get_history_today()
-    street_view = get_random_street_view()
+    leetcode = get_daily_leetcode()
 
     return (
         sentence,
@@ -583,7 +608,7 @@ def make_get_up_message(github_token):
         year_progress,
         running_info,
         history_today,
-        street_view,
+        leetcode,
     )
 
 
@@ -615,7 +640,7 @@ def main(
         year_progress,
         running_info,
         history_today,
-        street_view,
+        leetcode,
     ) = make_get_up_message(github_token)
     get_up_time = pendulum.now(TIMEZONE).to_datetime_string()
 
@@ -626,7 +651,7 @@ def main(
         year_progress=year_progress,
         running_info=running_info,
         history_today=history_today,
-        street_view=street_view,
+        leetcode=leetcode,
     )
 
     if is_get_up_early:

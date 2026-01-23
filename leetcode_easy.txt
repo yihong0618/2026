@@ -1,0 +1,206 @@
+1|Two Sum|two-sum
+9|Palindrome Number|palindrome-number
+13|Roman to Integer|roman-to-integer
+14|Longest Common Prefix|longest-common-prefix
+20|Valid Parentheses|valid-parentheses
+21|Merge Two Sorted Lists|merge-two-sorted-lists
+26|Remove Duplicates from Sorted Array|remove-duplicates-from-sorted-array
+27|Remove Element|remove-element
+28|Find the Index of the First Occurrence in a String|find-the-index-of-the-first-occurrence-in-a-string
+35|Search Insert Position|search-insert-position
+58|Length of Last Word|length-of-last-word
+66|Plus One|plus-one
+67|Add Binary|add-binary
+69|Sqrt(x)|sqrtx
+70|Climbing Stairs|climbing-stairs
+83|Remove Duplicates from Sorted List|remove-duplicates-from-sorted-list
+88|Merge Sorted Array|merge-sorted-array
+94|Binary Tree Inorder Traversal|binary-tree-inorder-traversal
+100|Same Tree|same-tree
+501|Find Mode in Binary Search Tree|find-mode-in-binary-search-tree
+504|Base 7|base-7
+506|Relative Ranks|relative-ranks
+507|Perfect Number|perfect-number
+509|Fibonacci Number|fibonacci-number
+511|Game Play Analysis I|game-play-analysis-i
+520|Detect Capital|detect-capital
+521|Longest Uncommon Subsequence I|longest-uncommon-subsequence-i
+530|Minimum Absolute Difference in BST|minimum-absolute-difference-in-bst
+541|Reverse String II|reverse-string-ii
+543|Diameter of Binary Tree|diameter-of-binary-tree
+551|Student Attendance Record I|student-attendance-record-i
+557|Reverse Words in a String III|reverse-words-in-a-string-iii
+559|Maximum Depth of N-ary Tree|maximum-depth-of-n-ary-tree
+561|Array Partition|array-partition
+563|Binary Tree Tilt|binary-tree-tilt
+566|Reshape the Matrix|reshape-the-matrix
+572|Subtree of Another Tree|subtree-of-another-tree
+575|Distribute Candies|distribute-candies
+577|Employee Bonus|employee-bonus
+584|Find Customer Referee|find-customer-referee
+586|Customer Placing the Largest Number of Orders|customer-placing-the-largest-number-of-orders
+589|N-ary Tree Preorder Traversal|n-ary-tree-preorder-traversal
+590|N-ary Tree Postorder Traversal|n-ary-tree-postorder-traversal
+594|Longest Harmonious Subsequence|longest-harmonious-subsequence
+595|Big Countries|big-countries
+596|Classes With at Least 5 Students|classes-with-at-least-5-students
+598|Range Addition II|range-addition-ii
+599|Minimum Index Sum of Two Lists|minimum-index-sum-of-two-lists
+1002|Find Common Characters|find-common-characters
+1005|Maximize Sum Of Array After K Negations|maximize-sum-of-array-after-k-negations
+1009|Complement of Base 10 Integer|complement-of-base-10-integer
+1013|Partition Array Into Three Parts With Equal Sum|partition-array-into-three-parts-with-equal-sum
+1018|Binary Prefix Divisible By 5|binary-prefix-divisible-by-5
+1021|Remove Outermost Parentheses|remove-outermost-parentheses
+1022|Sum of Root To Leaf Binary Numbers|sum-of-root-to-leaf-binary-numbers
+1025|Divisor Game|divisor-game
+1030|Matrix Cells in Distance Order|matrix-cells-in-distance-order
+1037|Valid Boomerang|valid-boomerang
+1046|Last Stone Weight|last-stone-weight
+1047|Remove All Adjacent Duplicates In String|remove-all-adjacent-duplicates-in-string
+1050|Actors and Directors Who Cooperated At Least Three Times|actors-and-directors-who-cooperated-at-least-three-times
+1051|Height Checker|height-checker
+1068|Product Sales Analysis I|product-sales-analysis-i
+1071|Greatest Common Divisor of Strings|greatest-common-divisor-of-strings
+1075|Project Employees I|project-employees-i
+1078|Occurrences After Bigram|occurrences-after-bigram
+1084|Sales Analysis III|sales-analysis-iii
+1089|Duplicate Zeros|duplicate-zeros
+1502|Can Make Arithmetic Progression From Sequence|can-make-arithmetic-progression-from-sequence
+1507|Reformat Date|reformat-date
+1512|Number of Good Pairs|number-of-good-pairs
+1517|Find Users With Valid E-Mails|find-users-with-valid-e-mails
+1518|Water Bottles|water-bottles
+1523|Count Odd Numbers in an Interval Range|count-odd-numbers-in-an-interval-range
+1527|Patients With a Condition|patients-with-a-condition
+1528|Shuffle String|shuffle-string
+1534|Count Good Triplets|count-good-triplets
+1539|Kth Missing Positive Number|kth-missing-positive-number
+1544|Make The String Great|make-the-string-great
+1550|Three Consecutive Odds|three-consecutive-odds
+1556|Thousand Separator|thousand-separator
+1560|Most Visited Sector in  a Circular Track|most-visited-sector-in-a-circular-track
+1566|Detect Pattern of Length M Repeated K or More Times|detect-pattern-of-length-m-repeated-k-or-more-times
+1572|Matrix Diagonal Sum|matrix-diagonal-sum
+1576|Replace All ?'s to Avoid Consecutive Repeating Characters|replace-all-s-to-avoid-consecutive-repeating-characters
+1581|Customer Who Visited but Did Not Make Any Transactions|customer-who-visited-but-did-not-make-any-transactions
+1582|Special Positions in a Binary Matrix|special-positions-in-a-binary-matrix
+1587|Bank Account Summary II|bank-account-summary-ii
+1588|Sum of All Odd Length Subarrays|sum-of-all-odd-length-subarrays
+1592|Rearrange Spaces Between Words|rearrange-spaces-between-words
+1598|Crawler Log Folder|crawler-log-folder
+2006|Count Number of Pairs With Absolute Difference K|count-number-of-pairs-with-absolute-difference-k
+2011|Final Value of Variable After Performing Operations|final-value-of-variable-after-performing-operations
+2016|Maximum Difference Between Increasing Elements|maximum-difference-between-increasing-elements
+2022|Convert 1D Array Into 2D Array|convert-1d-array-into-2d-array
+2027|Minimum Moves to Convert String|minimum-moves-to-convert-string
+2032|Two Out of Three|two-out-of-three
+2037|Minimum Number of Moves to Seat Everyone|minimum-number-of-moves-to-seat-everyone
+2042|Check if Numbers Are Ascending in a Sentence|check-if-numbers-are-ascending-in-a-sentence
+2047|Number of Valid Words in a Sentence|number-of-valid-words-in-a-sentence
+2053|Kth Distinct String in an Array|kth-distinct-string-in-an-array
+2057|Smallest Index With Equal Value|smallest-index-with-equal-value
+2062|Count Vowel Substrings of a String|count-vowel-substrings-of-a-string
+2068|Check Whether Two Strings are Almost Equivalent|check-whether-two-strings-are-almost-equivalent
+2073|Time Needed to Buy Tickets|time-needed-to-buy-tickets
+2078|Two Furthest Houses With Different Colors|two-furthest-houses-with-different-colors
+2085|Count Common Words With One Occurrence|count-common-words-with-one-occurrence
+2089|Find Target Indices After Sorting Array|find-target-indices-after-sorting-array
+2094|Finding 3-Digit Even Numbers|finding-3-digit-even-numbers
+2099|Find Subsequence of Length K With the Largest Sum|find-subsequence-of-length-k-with-the-largest-sum
+2506|Count Pairs Of Similar Strings|count-pairs-of-similar-strings
+2511|Maximum Enemy Forts That Can Be Captured|maximum-enemy-forts-that-can-be-captured
+2515|Shortest Distance to Target String in a Circular Array|shortest-distance-to-target-string-in-a-circular-array
+2520|Count the Digits That Divide a Number|count-the-digits-that-divide-a-number
+2525|Categorize Box According to Criteria|categorize-box-according-to-criteria
+2529|Maximum Count of Positive Integer and Negative Integer|maximum-count-of-positive-integer-and-negative-integer
+2535|Difference Between Element Sum and Digit Sum of an Array|difference-between-element-sum-and-digit-sum-of-an-array
+2540|Minimum Common Value|minimum-common-value
+2544|Alternating Digit Sum|alternating-digit-sum
+2549|Count Distinct Numbers on Board|count-distinct-numbers-on-board
+2553|Separate the Digits in an Array|separate-the-digits-in-an-array
+2558|Take Gifts From the Richest Pile|take-gifts-from-the-richest-pile
+2562|Find the Array Concatenation Value|find-the-array-concatenation-value
+2566|Maximum Difference by Remapping a Digit|maximum-difference-by-remapping-a-digit
+2570|Merge Two 2D Arrays by Summing Values|merge-two-2d-arrays-by-summing-values
+2574|Left and Right Sum Differences|left-and-right-sum-differences
+2578|Split With Minimum Sum|split-with-minimum-sum
+2582|Pass the Pillow|pass-the-pillow
+2586|Count the Number of Vowel Strings in Range|count-the-number-of-vowel-strings-in-range
+2591|Distribute Money to Maximum Children|distribute-money-to-maximum-children
+2595|Number of Even and Odd Bits|number-of-even-and-odd-bits
+2600|K Items With the Maximum Sum|k-items-with-the-maximum-sum
+3005|Count Elements With Maximum Frequency|count-elements-with-maximum-frequency
+3010|Divide an Array Into Subarrays With Minimum Cost I|divide-an-array-into-subarrays-with-minimum-cost-i
+3014|Minimum Number of Pushes to Type Word I|minimum-number-of-pushes-to-type-word-i
+3019|Number of Changing Keys|number-of-changing-keys
+3024|Type of Triangle|type-of-triangle
+3028|Ant on the Boundary|ant-on-the-boundary
+3033|Modify the Matrix|modify-the-matrix
+3038|Maximum Number of Operations With the Same Score I|maximum-number-of-operations-with-the-same-score-i
+3042|Count Prefix and Suffix Pairs I|count-prefix-and-suffix-pairs-i
+3046|Split the Array|split-the-array
+3065|Minimum Operations to Exceed Threshold Value I|minimum-operations-to-exceed-threshold-value-i
+3069|Distribute Elements Into Two Arrays I|distribute-elements-into-two-arrays-i
+3074|Apple Redistribution into Boxes|apple-redistribution-into-boxes
+3079|Find the Sum of Encrypted Integers|find-the-sum-of-encrypted-integers
+3083|Existence of a Substring in a String and Its Reverse|existence-of-a-substring-in-a-string-and-its-reverse
+3090|Maximum Length Substring With Two Occurrences|maximum-length-substring-with-two-occurrences
+3095|Shortest Subarray With OR at Least K I|shortest-subarray-with-or-at-least-k-i
+3099|Harshad Number|harshad-number
+3502|Minimum Cost to Reach Every Position|minimum-cost-to-reach-every-position
+3507|Minimum Pair Removal to Sort Array I|minimum-pair-removal-to-sort-array-i
+3512|Minimum Operations to Make Array Sum Divisible by K|minimum-operations-to-make-array-sum-divisible-by-k
+3516|Find Closest Person|find-closest-person
+3536|Maximum Product of Two Digits|maximum-product-of-two-digits
+3541|Find Most Frequent Vowel and Consonant|find-most-frequent-vowel-and-consonant
+3545|Minimum Deletions for At Most K Distinct Characters|minimum-deletions-for-at-most-k-distinct-characters
+3550|Smallest Index With Digit Sum Equal to Index|smallest-index-with-digit-sum-equal-to-index
+3560|Find Minimum Log Transportation Cost|find-minimum-log-transportation-cost
+3570|Find Books with No Available Copies|find-books-with-no-available-copies
+3582|Generate Tag for Video Caption|generate-tag-for-video-caption
+3591|Check if Any Element Has Prime Frequency|check-if-any-element-has-prime-frequency
+LCR 120|寻找文件副本|shu-zu-zhong-zhong-fu-de-shu-zi-lcof
+LCR 122|路径加密|ti-huan-kong-ge-lcof
+LCR 123|图书整理 I|cong-wei-dao-tou-da-yin-lian-biao-lcof
+LCR 125|图书整理 II|yong-liang-ge-zhan-shi-xian-dui-lie-lcof
+LCR 126|斐波那契数|fei-bo-na-qi-shu-lie-lcof
+LCR 127|跳跃训练|qing-wa-tiao-tai-jie-wen-ti-lcof
+LCR 128|库存管理 I|xuan-zhuan-shu-zu-de-zui-xiao-shu-zi-lcof
+LCR 133|位 1 的个数|er-jin-zhi-zhong-1de-ge-shu-lcof
+LCR 135|报数|da-yin-cong-1dao-zui-da-de-nwei-shu-lcof
+LCR 136|删除链表的节点|shan-chu-lian-biao-de-jie-dian-lcof
+LCR 139|训练计划 I|diao-zheng-shu-zu-shun-xu-shi-qi-shu-wei-yu-ou-shu-qian-mian-lcof
+LCR 140|训练计划 II|lian-biao-zhong-dao-shu-di-kge-jie-dian-lcof
+LCR 141|训练计划 III|fan-zhuan-lian-biao-lcof
+LCR 142|训练计划 IV|he-bing-liang-ge-pai-xu-de-lian-biao-lcof
+LCR 144|翻转二叉树|er-cha-shu-de-jing-xiang-lcof
+LCR 145|判断对称二叉树|dui-cheng-de-er-cha-shu-lcof
+LCR 146|螺旋遍历二维数组|shun-shi-zhen-da-yin-ju-zhen-lcof
+LCR 147|最小栈|bao-han-minhan-shu-de-zhan-lcof
+LCR 150|彩灯装饰记录 II|cong-shang-dao-xia-da-yin-er-cha-shu-ii-lcof
+LCR 158|库存管理 II|shu-zu-zhong-chu-xian-ci-shu-chao-guo-yi-ban-de-shu-zi-lcof
+LCR 159|库存管理 III|zui-xiao-de-kge-shu-lcof
+LCR 161|连续天数的最高销售额|lian-xu-zi-shu-zu-de-zui-da-he-lcof
+LCR 169|招式拆解 II|di-yi-ge-zhi-chu-xian-yi-ci-de-zi-fu-lcof
+LCR 171|训练计划 V|liang-ge-lian-biao-de-di-yi-ge-gong-gong-jie-dian-lcof
+LCR 172|统计目标成绩的出现次数|zai-pai-xu-shu-zu-zhong-cha-zhao-shu-zi-lcof
+LCR 173|点名|que-shi-de-shu-zi-lcof
+LCR 174|寻找二叉搜索树中的目标节点|er-cha-sou-suo-shu-de-di-kda-jie-dian-lcof
+LCR 175|计算二叉树的深度|er-cha-shu-de-shen-du-lcof
+LCR 176|判断是否为平衡二叉树|ping-heng-er-cha-shu-lcof
+LCR 179|查找总价格为目标值的两个商品|he-wei-sde-liang-ge-shu-zi-lcof
+LCR 180|文件组合|he-wei-sde-lian-xu-zheng-shu-xu-lie-lcof
+LCR 181|字符串中的单词反转|fan-zhuan-dan-ci-shun-xu-lcof
+LCR 182|动态口令|zuo-xuan-zhuan-zi-fu-chuan-lcof
+LCR 186|文物朝代判断|bu-ke-pai-zhong-de-shun-zi-lcof
+LCR 187|破冰游戏|yuan-quan-zhong-zui-hou-sheng-xia-de-shu-zi-lcof
+LCR 190|加密运算|bu-yong-jia-jian-cheng-chu-zuo-jia-fa-lcof
+LCR 193|求二叉搜索树的最近公共祖先|er-cha-sou-suo-shu-de-zui-jin-gong-gong-zu-xian-lcof
+LCR 194|寻找二叉树的最近公共祖先|er-cha-shu-de-zui-jin-gong-gong-zu-xian-lcof
+LCS 01|下载插件|Ju9Xwi
+LCS 02|完成一半题目|WqXACV
+面试题 01.01|Is Unique LCCI|is-unique-lcci
+面试题 01.02|Check Permutation LCCI|check-permutation-lcci
+面试题 01.03|String to URL LCCI|string-to-url-lcci
+面试题 01.04|Palindrome Permutation LCCI|palindrome-permutation-lcci
