@@ -111,7 +111,7 @@ def _get_script_dir():
 def get_daily_leetcode():
     """获取今日 LeetCode 题目
 
-    周三出中等题，其他日子出简单题。
+    周四（疯狂星期四）出中等题，其他日子出简单题。
     使用文件记录已出过的题目，避免重复。
 
     Returns:
@@ -126,8 +126,8 @@ def get_daily_leetcode():
         used_file = os.path.join(script_dir, LEETCODE_USED_FILE)
 
         now = pendulum.now(TIMEZONE)
-        # 周三是 3 (pendulum: Monday=1, ..., Wednesday=3, ..., Sunday=7)
-        is_wednesday = now.day_of_week == 3
+        # 周四是 3 (pendulum: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6)
+        is_thursday = now.day_of_week == 3
 
         # 读取已使用的题目
         used_slugs = set()
@@ -136,14 +136,16 @@ def get_daily_leetcode():
                 used_slugs = set(line.strip() for line in f if line.strip())
 
         # 选择题库文件
-        if is_wednesday:
+        if is_thursday:
             problem_file = medium_file
             difficulty = "中等"
             difficulty_emoji = "🟡"
+            hint = "🍗 疯狂星期四！"
         else:
             problem_file = easy_file
             difficulty = "简单"
             difficulty_emoji = "🟢"
+            hint = ""
 
         # 读取题目列表
         if not os.path.exists(problem_file):
@@ -181,7 +183,11 @@ def get_daily_leetcode():
 
         url = f"https://leetcode.cn/problems/{slug}/"
 
-        return f"""📚 今日 LeetCode {difficulty_emoji} {difficulty}题：
+        header = f"📚 今日 LeetCode {difficulty_emoji} {difficulty}题"
+        if hint:
+            header = f"{hint} {header}"
+
+        return f"""{header}：
 
 [{problem_id}. {title}]({url})"""
 
