@@ -21,11 +21,11 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 {year_progress}
 
+{leetcode}
+
 {running_info}
 
 {history_today}
-
-{leetcode}
 
 今天的一首诗:
 
@@ -130,7 +130,9 @@ def _get_leetcode_daily_question():
             }
         }
         """
-        response = requests.post(url, json={"query": query}, headers=headers, timeout=10)
+        response = requests.post(
+            url, json={"query": query}, headers=headers, timeout=10
+        )
         if response.ok:
             data = response.json()
             records = data.get("data", {}).get("todayRecord", [])
@@ -141,7 +143,9 @@ def _get_leetcode_daily_question():
                         "id": q.get("questionFrontendId", ""),
                         "title": q.get("title", ""),
                         "slug": q.get("titleSlug", ""),
-                        "difficulty": q.get("difficulty", "").upper(),  # EASY, MEDIUM, HARD
+                        "difficulty": q.get(
+                            "difficulty", ""
+                        ).upper(),  # EASY, MEDIUM, HARD
                     }
         return None
     except Exception as e:
@@ -196,8 +200,10 @@ def get_daily_leetcode():
         use_daily = False
         if daily_question:
             # 检查难度是否符合，且未做过
-            if (daily_question["difficulty"] == target_difficulty and 
-                daily_question["slug"] not in used_slugs):
+            if (
+                daily_question["difficulty"] == target_difficulty
+                and daily_question["slug"] not in used_slugs
+            ):
                 use_daily = True
                 problem_id = daily_question["id"]
                 title = daily_question["title"]
@@ -255,7 +261,7 @@ def get_daily_leetcode():
         return ""
 
 
-def get_history_today(birth_year=BIRTH_YEAR, limit=3):
+def get_history_today(birth_year=BIRTH_YEAR, limit=2):
     """获取历史上的今天发生的事件
 
     Args:
