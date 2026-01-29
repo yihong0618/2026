@@ -34,7 +34,6 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 # LeetCode 题目文件路径
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
-LEETCODE_MEDIUM_FILE = "leetcode_medium.txt"
 LEETCODE_USED_FILE = "leetcode_used.txt"
 # 使用 v2 API 获取完整诗词
 SENTENCE_API = "https://v2.jinrishici.com/one.json"
@@ -168,12 +167,9 @@ def get_daily_leetcode():
     try:
         script_dir = _get_script_dir()
         easy_file = os.path.join(script_dir, LEETCODE_EASY_FILE)
-        medium_file = os.path.join(script_dir, LEETCODE_MEDIUM_FILE)
         used_file = os.path.join(script_dir, LEETCODE_USED_FILE)
 
         now = pendulum.now(TIMEZONE)
-        # 周四是 3 (pendulum: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6)
-        is_thursday = now.day_of_week == 3
 
         # 读取已使用的题目
         used_slugs = set()
@@ -181,19 +177,12 @@ def get_daily_leetcode():
             with open(used_file, "r") as f:
                 used_slugs = set(line.strip() for line in f if line.strip())
 
-        # 确定今天需要的难度
-        if is_thursday:
-            target_difficulty = "MEDIUM"
-            difficulty = "中等"
-            difficulty_emoji = "🟡"
-            hint = "🍗 疯狂星期四！"
-            problem_file = medium_file
-        else:
-            target_difficulty = "EASY"
-            difficulty = "简单"
-            difficulty_emoji = "🟢"
-            hint = ""
-            problem_file = easy_file
+        # 只做简单题，不要忘了为什么出发
+        target_difficulty = "EASY"
+        difficulty = "简单"
+        difficulty_emoji = "🟢"
+        hint = ""
+        problem_file = easy_file
 
         # 尝试获取官方每日一题
         daily_question = _get_leetcode_daily_question()

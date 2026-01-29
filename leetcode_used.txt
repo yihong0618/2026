@@ -1,2 +1,4 @@
 minimum-difference-between-highest-and-lowest-of-k-scores
 matrix-diagonal-sum
+fei-bo-na-qi-shu-lie-lcof
+qing-wa-tiao-tai-jie-wen-ti-lcof

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""获取 LeetCode CN 的所有简单和中等题目"""
+"""获取 LeetCode CN 的所有简单题目 - 只做 easy，不要忘了为什么出发"""
 import requests
 
 url = "https://leetcode.cn/graphql/"
@@ -26,7 +26,6 @@ query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $fi
 """
 
 easy = []
-medium = []
 
 skip = 0
 limit = 500
@@ -51,11 +50,9 @@ while True:
     for q in questions:
         if q["paidOnly"]:
             continue
-        item = f"{q['frontendQuestionId']}|{q['title']}|{q['titleSlug']}"
         if q["difficulty"] == "EASY":
+            item = f"{q['frontendQuestionId']}|{q['title']}|{q['titleSlug']}"
             easy.append(item)
-        elif q["difficulty"] == "MEDIUM":
-            medium.append(item)
 
     skip += limit
     print(f"Fetched {skip} questions...")
@@ -66,11 +63,7 @@ while True:
 with open("leetcode_easy.txt", "w") as f:
     f.write("\n".join(easy))
 
-with open("leetcode_medium.txt", "w") as f:
-    f.write("\n".join(medium))
-
 # 创建空的已使用记录文件（如果不存在）
 open("leetcode_used.txt", "a").close()
 
 print(f"Written {len(easy)} easy problems to leetcode_easy.txt")
-print(f"Written {len(medium)} medium problems to leetcode_medium.txt")
