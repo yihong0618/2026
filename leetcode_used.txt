@@ -4,3 +4,4 @@ fei-bo-na-qi-shu-lie-lcof
 qing-wa-tiao-tai-jie-wen-ti-lcof
 shuffle-string
 count-good-triplets
+divide-an-array-into-subarrays-with-minimum-cost-i
