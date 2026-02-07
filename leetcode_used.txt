@@ -6,3 +6,4 @@ shuffle-string
 count-good-triplets
 divide-an-array-into-subarrays-with-minimum-cost-i
 minimum-number-of-pushes-to-type-word-i
+balanced-binary-tree
