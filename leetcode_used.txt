@@ -13,3 +13,4 @@ special-positions-in-a-binary-matrix
 ant-on-the-boundary
 count-the-number-of-vowel-strings-in-range
 longest-harmonious-subsequence
+add-binary
