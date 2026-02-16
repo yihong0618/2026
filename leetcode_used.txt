@@ -15,3 +15,4 @@ count-the-number-of-vowel-strings-in-range
 longest-harmonious-subsequence
 add-binary
 reverse-bits
+binary-watch
