@@ -16,3 +16,4 @@ longest-harmonious-subsequence
 add-binary
 reverse-bits
 binary-watch
+binary-number-with-alternating-bits
