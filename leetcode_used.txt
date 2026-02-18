@@ -17,3 +17,4 @@ add-binary
 reverse-bits
 binary-watch
 binary-number-with-alternating-bits
+count-binary-substrings
