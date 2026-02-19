@@ -18,3 +18,4 @@ reverse-bits
 binary-watch
 binary-number-with-alternating-bits
 count-binary-substrings
+replace-all-s-to-avoid-consecutive-repeating-characters
