@@ -21,3 +21,4 @@ count-binary-substrings
 replace-all-s-to-avoid-consecutive-repeating-characters
 prime-number-of-set-bits-in-binary-representation
 binary-gap
+find-most-frequent-vowel-and-consonant
