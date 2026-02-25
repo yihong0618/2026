@@ -162,7 +162,7 @@
 3591|Check if Any Element Has Prime Frequency|check-if-any-element-has-prime-frequency
 LCR 120|寻找文件副本|shu-zu-zhong-zhong-fu-de-shu-zi-lcof
 LCR 122|路径加密|ti-huan-kong-ge-lcof
-LCR 123|图书整理 I|cong-wei-dao-tou-da-yin-lian-biao-lcof
+LCR 123|图书整理 I|cong-wei-dao-you-da-yin-lian-biao-lcof
 LCR 125|图书整理 II|yong-liang-ge-zhan-shi-xian-dui-lie-lcof
 LCR 126|斐波那契数|fei-bo-na-qi-shu-lie-lcof
 LCR 127|跳跃训练|qing-wa-tiao-tai-jie-wen-ti-lcof

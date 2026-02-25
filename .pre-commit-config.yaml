@@ -1,0 +1,47 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+      - id: mixed-line-ending
+      - id: fix-byte-order-marker
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.42.3
+    hooks:
+      - id: typos
+
+  - repo: local
+    hooks:
+      - id: black
+        name: black
+        entry: uv run black
+        language: system
+        types: [python]
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run --python .venv/bin/python mypy --no-incremental
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["."]

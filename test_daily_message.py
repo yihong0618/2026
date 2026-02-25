@@ -10,12 +10,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 from get_up import (
     GET_UP_MESSAGE_TEMPLATE,
     TIMEZONE,
-    get_one_sentence,
     get_day_of_year,
     get_year_progress,
     get_running_distance,
     get_history_today,
     get_daily_leetcode,
+    get_blog_article_from_history,
     make_get_up_message,
 )
 
@@ -29,25 +29,25 @@ def test_full_message():
 
     # 使用 None 作为 github_token（因为我们已经移除了 GitHub 动态）
     (
-        sentence,
         is_get_up_early,
         day_of_year,
         year_progress,
         running_info,
         history_today,
         leetcode,
+        blog_article,
     ) = make_get_up_message(None)
 
     get_up_time = pendulum.now(TIMEZONE).to_datetime_string()
 
     body = GET_UP_MESSAGE_TEMPLATE.format(
         get_up_time=get_up_time,
-        sentence=sentence,
         day_of_year=day_of_year,
         year_progress=year_progress,
         running_info=running_info,
         history_today=history_today,
         leetcode=leetcode,
+        blog_article=blog_article,
     )
 
     print(body)
@@ -88,7 +88,7 @@ def test_individual_components():
         print("   无法获取历史事件")
     print()
 
-    print("� 今日 LeetCode:")
+    print("💻 今日 LeetCode:")
     leetcode = get_daily_leetcode()
     if leetcode:
         print(f"   {leetcode}")
@@ -96,9 +96,12 @@ def test_individual_components():
         print("   无法获取 LeetCode 题目")
     print()
 
-    print("�📖 每日一诗:")
-    sentence = get_one_sentence()
-    print(f"   {sentence}")
+    print("📖 历史上的今天博客:")
+    blog = get_blog_article_from_history()
+    if blog:
+        print(f"   {blog}")
+    else:
+        print("   无法获取博客文章")
     print()
 
 

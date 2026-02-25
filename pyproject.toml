@@ -13,6 +13,13 @@ dependencies = [
     "requests>=2.32.4",
     "rich>=14.1.0",
     "telegramify-markdown>=0.5.1",
+    "types-requests>=2.32.0",
     "wcwidth>=0.2.13",
     "zhconv>=1.4.3",
 ]
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[dependency-groups]
+dev = ["mypy>=1.0.0", "types-requests>=2.32.0"]

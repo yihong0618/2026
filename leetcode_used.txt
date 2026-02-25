@@ -24,3 +24,13 @@ binary-gap
 find-most-frequent-vowel-and-consonant
 sum-of-root-to-leaf-binary-numbers
 sort-integers-by-the-number-of-1-bits
+er-cha-sou-suo-shu-de-zui-jin-gong-gong-zu-xian-lcof
+er-cha-shu-de-zui-jin-gong-gong-zu-xian-lcof
+Ju9Xwi
+WqXACV
+is-unique-lcci
+check-permutation-lcci
+string-to-url-lcci
+palindrome-permutation-lcci
+search-insert-position
+length-of-last-word

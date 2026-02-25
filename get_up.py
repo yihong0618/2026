@@ -27,24 +27,14 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 {history_today}
 
-今天的一首诗:
-
-{sentence}
+{blog_article}
 """
 
 # LeetCode 题目文件路径
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
 LEETCODE_USED_FILE = "leetcode_used.txt"
-# 使用 v2 API 获取完整诗词
-SENTENCE_API = "https://v2.jinrishici.com/one.json"
-
-DEFAULT_SENTENCE = """《苦笋》
-赏花归去马如飞，
-去马如飞酒力微，
-酒力微醒时已暮，
-醒时已暮赏花归。
-
-—— 宋·苏轼"""
+# 博客文章已使用网站记录文件
+BLOG_SITES_USED_FILE = "blog_sites_used.txt"
 TIMEZONE = "Asia/Shanghai"
 
 BIRTH_YEAR = 1989  # change it to your birth year
@@ -52,37 +42,6 @@ BIRTH_YEAR = 1989  # change it to your birth year
 
 def login(token):
     return Github(auth=Auth.Token(token))
-
-
-def get_one_sentence():
-    """获取今天的一首诗
-
-    使用今日诗词 v2 API 获取完整的诗词内容
-    返回格式：《诗名》\n诗词内容\n\n—— 朝代·作者
-    """
-    try:
-        r = requests.get(SENTENCE_API, timeout=10)
-        if r.ok:
-            data = r.json()
-
-            # 获取诗词来源信息
-            origin = data.get("data", {}).get("origin", {})
-            title = origin.get("title", "")
-            dynasty = origin.get("dynasty", "")
-            author = origin.get("author", "")
-            content_list = origin.get("content", [])
-
-            if content_list and title and author:
-                # 将诗词内容数组合并为字符串（每句一行）
-                content = "\n".join(content_list)
-                # 格式化输出：《诗名》\n内容\n\n—— 朝代·作者
-                poem = f"《{title}》\n{content}\n\n—— {dynasty}·{author}"
-                return poem
-
-        return DEFAULT_SENTENCE
-    except Exception as e:
-        print(f"get SENTENCE_API wrong: {e}")
-        return DEFAULT_SENTENCE
 
 
 def _get_script_dir():
@@ -288,6 +247,263 @@ def get_history_today(birth_year=BIRTH_YEAR, limit=2):
         return "fail to get it"
 
 
+def _extract_domain(url):
+    """从 URL 中提取域名"""
+    if not url:
+        return ""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        domain = parsed.netloc
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain
+    except Exception:
+        return ""
+
+
+def _load_used_sites():
+    """加载已使用的网站域名列表"""
+    script_dir = _get_script_dir()
+    used_file = os.path.join(script_dir, BLOG_SITES_USED_FILE)
+    if os.path.exists(used_file):
+        with open(used_file, "r") as f:
+            return set(line.strip() for line in f if line.strip())
+    return set()
+
+
+def _save_used_site(domain):
+    """保存已使用的网站域名"""
+    script_dir = _get_script_dir()
+    used_file = os.path.join(script_dir, BLOG_SITES_USED_FILE)
+    with open(used_file, "a") as f:
+        f.write(f"{domain}\n")
+
+
+def _check_link_available(url, timeout=10):
+    """验证链接是否可用"""
+    if not url:
+        return False
+    try:
+        # 使用 HEAD 请求快速检查链接
+        response = requests.head(url, timeout=timeout, allow_redirects=True)
+        # 2xx 状态码认为是可用的
+        return 200 <= response.status_code < 300
+    except requests.exceptions.RequestException:
+        # 超时或请求失败，认为不可用
+        return False
+
+
+def _extract_text_snippet(content, max_length=200):
+    """从 HTML/Markdown 内容中提取纯文本摘要"""
+    import re
+
+    if not content:
+        return ""
+
+    # 移除 HTML 标签
+    text = re.sub(r"<[^>]+>", "", content)
+    # 移除 Markdown 链接 [text](url)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    # 移除 Markdown 标题标记
+    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
+    # 移除其他 Markdown 标记
+    text = re.sub(r"[*`_~]", "", text)
+    # 移除多余空白
+    text = " ".join(text.split())
+
+    # 截取合适长度，尽量在句子边界截断
+    if len(text) <= max_length:
+        return text
+
+    # 尝试在句子边界截断
+    truncated = text[:max_length]
+    # 查找最后一个句号、问号或感叹号
+    for punct in ["。", "？", "！", ". ", "? ", "! "]:
+        last_pos = truncated.rfind(punct)
+        if last_pos > max_length * 0.5:  # 确保至少保留一半内容
+            return text[: last_pos + len(punct)].strip()
+
+    # 如果没有找到合适的句子边界，在空格处截断
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        return text[:last_space] + "..."
+
+    return truncated + "..."
+
+
+def get_blog_article_from_history():
+    """
+    获取历史上今天的博客文章 (2014-2025年)
+
+    从 saveweb.org API 随机获取一篇历史上今天发布的博客文章
+    会记录已使用的网站域名，尽量返回不同网站的文章
+    如果当天没有文章，则随机搜索其他日期
+    """
+    try:
+        used_sites = _load_used_sites()
+        now = pendulum.now(TIMEZONE)
+        current_year = now.year
+
+        # 尝试当前日期，范围 2014-2025
+        month = now.month
+        day = now.day
+
+        all_articles = []
+
+        # 搜索 2014-2025 年每年这一天的文章
+        for year in range(2014, 2026):
+            try:
+                # 构建 API URL
+                date_str = f"{year}-{month}-{day}"
+                api_url = f"https://search-api.saveweb.org/api/search?q=(date%20%3D%20sec({date_str}))&f=false&p=0&h=true"
+
+                response = requests.get(api_url, timeout=10)
+                if response.ok:
+                    data = response.json()
+                    hits = data.get("hits", [])
+                    for hit in hits:
+                        link = hit.get("link", "")
+                        if link:
+                            domain = _extract_domain(link)
+                            hit["domain"] = domain
+                            all_articles.append(hit)
+            except Exception as e:
+                print(f"Error fetching articles for {year}-{month}-{day}: {e}")
+                continue
+
+        if not all_articles:
+            # 如果当天没有文章，随机选一天搜索
+            print("No articles found for today, trying random date...")
+            for _ in range(5):  # 尝试5次随机日期
+                try:
+                    random_year = random.randint(2014, 2025)
+                    random_month = random.randint(1, 12)
+                    random_day = random.randint(1, 28)
+                    date_str = f"{random_year}-{random_month}-{random_day}"
+                    api_url = f"https://search-api.saveweb.org/api/search?q=(date%20%3D%20sec({date_str}))&f=false&p=0&h=true"
+
+                    response = requests.get(api_url, timeout=10)
+                    if response.ok:
+                        data = response.json()
+                        hits = data.get("hits", [])
+                        for hit in hits:
+                            link = hit.get("link", "")
+                            if link:
+                                domain = _extract_domain(link)
+                                hit["domain"] = domain
+                                all_articles.append(hit)
+                        if all_articles:
+                            break
+                except Exception:
+                    continue
+
+        if not all_articles:
+            return ""
+
+        # 优先选择未使用过的网站
+        unused_articles = [
+            a for a in all_articles if a.get("domain") and a["domain"] not in used_sites
+        ]
+
+        # 设置随机种子（基于日期）以确保同一天返回相同结果
+        day_seed = now.year * 1000 + now.day_of_year
+        random.seed(day_seed)
+
+        # 尝试选择一个可用的链接（最多尝试10次）
+        selected = None
+        checked_articles = []
+        max_attempts = min(10, len(all_articles))
+
+        for _ in range(max_attempts):
+            # 优先从未使用过的文章中选择
+            if unused_articles:
+                candidate = random.choice(unused_articles)
+                unused_articles.remove(candidate)
+            elif all_articles:
+                candidate = random.choice(all_articles)
+                all_articles.remove(candidate)
+            else:
+                break
+
+            link = candidate.get("link", "")
+            # 验证链接是否可用
+            if link and _check_link_available(link):
+                selected = candidate
+                break
+            else:
+                # 记录已检查的文章，如果都不可用，最后选一个用
+                checked_articles.append(candidate)
+
+        random.seed()  # 重置随机种子
+
+        # 如果所有链接都不可用，从已检查的文章中选第一个（会返回失效链接，但总比没有好）
+        if selected is None and checked_articles:
+            selected = checked_articles[0]
+
+        if selected is None:
+            return ""
+
+        # 记录使用的网站
+        domain = selected.get("domain", "")
+        if domain and domain not in used_sites:
+            _save_used_site(domain)
+
+        title = selected.get("title", "未知标题")
+        link = selected.get("link", "")
+
+        # 格式化日期
+        article_date = ""
+        if selected.get("date"):
+            try:
+                article_ts = int(selected["date"])
+                article_dt = pendulum.from_timestamp(article_ts)
+                article_date = article_dt.format("YYYY-MM-DD")
+            except Exception:
+                pass
+
+        # 计算文章发布距今多少年（类似年龄计算）
+        years_ago = None
+        if article_date:
+            try:
+                article_year = int(article_date.split("-")[0])
+                years_ago = current_year - article_year
+            except Exception:
+                pass
+
+        # 提取内容摘要作为引用
+        content = selected.get("content", "")
+        snippet = _extract_text_snippet(content, max_length=200)
+
+        # 构建结果
+        result_lines = []
+
+        # 标题：来自 xx 年前的博客
+        if years_ago is not None and years_ago >= 0:
+            header = f"**来自 {years_ago} 年前的博客** ({article_date})"
+        else:
+            header = "**历史上的博客**"
+
+        if link:
+            result_lines.append(f"{header}：[{title}]({link})")
+        else:
+            result_lines.append(f"{header}：{title}")
+
+        # 添加引用（如果有内容）
+        if snippet:
+            result_lines.append("")
+            # 将摘要转换为 Markdown 引用格式
+            quoted_lines = [f"> {line}" for line in snippet.split("\n") if line.strip()]
+            result_lines.extend(quoted_lines)
+
+        return "\n".join(result_lines)
+
+    except Exception as e:
+        print(f"Error getting blog article: {e}")
+        return ""
+
+
 def get_running_distance():
     try:
         url = "https://github.com/yihong0618/run/raw/refs/heads/master/run_page/data.parquet"
@@ -307,7 +523,7 @@ def get_running_distance():
                 year_start = now.start_of("year")
 
                 yesterday_query = f"""
-                SELECT 
+                SELECT
                     COUNT(*) as count,
                     ROUND(SUM(distance)/1000, 2) as total_km
                 FROM read_parquet('{temp_file.name}')
@@ -315,20 +531,20 @@ def get_running_distance():
                 """
 
                 month_query = f"""
-                SELECT 
+                SELECT
                     COUNT(*) as count,
                     ROUND(SUM(distance)/1000, 2) as total_km
                 FROM read_parquet('{temp_file.name}')
-                WHERE start_date_local >= '{month_start.to_date_string()}' 
+                WHERE start_date_local >= '{month_start.to_date_string()}'
                     AND start_date_local < '{now.add(days=1).to_date_string()}'
                 """
 
                 year_query = f"""
-                SELECT 
+                SELECT
                     COUNT(*) as count,
                     ROUND(SUM(distance)/1000, 2) as total_km
                 FROM read_parquet('{temp_file.name}')
-                WHERE start_date_local >= '{year_start.to_date_string()}' 
+                WHERE start_date_local >= '{year_start.to_date_string()}'
                     AND start_date_local < '{now.add(days=1).to_date_string()}'
                 """
 
@@ -398,31 +614,26 @@ def get_today_get_up_status(issue):
 
 
 def make_get_up_message(github_token):
-    sentence = get_one_sentence()
     now = pendulum.now(TIMEZONE)
     # 3 - 9 means early for me
     # 3 means 我喝多了起来上厕所
     is_get_up_early = 3 <= now.hour <= 9
-    try:
-        sentence = get_one_sentence()
-        print(f"Second: {sentence}")
-    except Exception as e:
-        print(str(e))
 
     day_of_year = get_day_of_year()
     year_progress = get_year_progress()
     running_info = get_running_distance()
     history_today = get_history_today()
     leetcode = get_daily_leetcode()
+    blog_article = get_blog_article_from_history()
 
     return (
-        sentence,
         is_get_up_early,
         day_of_year,
         year_progress,
         running_info,
         history_today,
         leetcode,
+        blog_article,
     )
 
 
@@ -441,24 +652,24 @@ def main(
         return
 
     (
-        sentence,
         is_get_up_early,
         day_of_year,
         year_progress,
         running_info,
         history_today,
         leetcode,
+        blog_article,
     ) = make_get_up_message(github_token)
     get_up_time = pendulum.now(TIMEZONE).to_datetime_string()
 
     body = GET_UP_MESSAGE_TEMPLATE.format(
         get_up_time=get_up_time,
-        sentence=sentence,
         day_of_year=day_of_year,
         year_progress=year_progress,
         running_info=running_info,
         history_today=history_today,
         leetcode=leetcode,
+        blog_article=blog_article,
     )
 
     if is_get_up_early:
