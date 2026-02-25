@@ -34,3 +34,4 @@ string-to-url-lcci
 palindrome-permutation-lcci
 search-insert-position
 length-of-last-word
+longest-uncommon-subsequence-i
