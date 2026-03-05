@@ -43,3 +43,4 @@ find-subsequence-of-length-k-with-the-largest-sum
 reverse-string-ii
 minimum-changes-to-make-alternating-binary-string
 find-target-indices-after-sorting-array
+check-if-binary-string-has-at-most-one-segment-of-ones
