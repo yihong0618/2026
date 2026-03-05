@@ -42,3 +42,4 @@ type-of-triangle
 find-subsequence-of-length-k-with-the-largest-sum
 reverse-string-ii
 minimum-changes-to-make-alternating-binary-string
+find-target-indices-after-sorting-array

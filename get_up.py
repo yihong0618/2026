@@ -33,6 +33,8 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 # LeetCode 题目文件路径
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
 LEETCODE_USED_FILE = "leetcode_used.txt"
+LEETCODE_HOT100_FILE = "leetcode_hot100.txt"
+LEETCODE_HOT100_USED_FILE = "leetcode_hot100_used.txt"
 # 博客文章已使用网站记录文件
 BLOG_SITES_USED_FILE = "blog_sites_used.txt"
 TIMEZONE = "Asia/Shanghai"
@@ -93,78 +95,119 @@ def _get_leetcode_daily_question():
         return None
 
 
+def _pick_from_pool(problem_file, used_file, now):
+    """从题库文件中随机选一道未做过的题，返回 (problem_id, title, slug, difficulty) 或 None"""
+    used_slugs = set()
+    if os.path.exists(used_file):
+        with open(used_file, "r") as f:
+            used_slugs = set(line.strip() for line in f if line.strip())
+
+    if not os.path.exists(problem_file):
+        return None
+
+    with open(problem_file, "r") as f:
+        problems = [line.strip() for line in f if line.strip()]
+
+    available = []
+    for p in problems:
+        parts = p.split("|")
+        if len(parts) >= 3:
+            slug = parts[2]
+            if slug not in used_slugs:
+                available.append(parts)
+
+    if not available:
+        return None
+
+    day_seed = now.year * 1000 + now.day_of_year
+    random.seed(day_seed)
+    selected = random.choice(available)
+    random.seed()
+
+    problem_id = selected[0]
+    title = selected[1]
+    slug = selected[2]
+    difficulty = selected[3].upper() if len(selected) >= 4 else "EASY"
+
+    # 记录已使用
+    with open(used_file, "a") as f:
+        f.write(f"{slug}\n")
+
+    return (problem_id, title, slug, difficulty)
+
+
 def get_daily_leetcode():
     try:
         script_dir = _get_script_dir()
         easy_file = os.path.join(script_dir, LEETCODE_EASY_FILE)
-        used_file = os.path.join(script_dir, LEETCODE_USED_FILE)
+        easy_used_file = os.path.join(script_dir, LEETCODE_USED_FILE)
+        hot100_file = os.path.join(script_dir, LEETCODE_HOT100_FILE)
+        hot100_used_file = os.path.join(script_dir, LEETCODE_HOT100_USED_FILE)
 
         now = pendulum.now(TIMEZONE)
 
-        used_slugs = set()
-        if os.path.exists(used_file):
-            with open(used_file, "r") as f:
-                used_slugs = set(line.strip() for line in f if line.strip())
+        # 先加载 easy 的 used_slugs 用于每日一题判断
+        easy_used_slugs = set()
+        if os.path.exists(easy_used_file):
+            with open(easy_used_file, "r") as f:
+                easy_used_slugs = set(line.strip() for line in f if line.strip())
 
-        target_difficulty = "EASY"
-        difficulty = "简单"
-        difficulty_emoji = "🟢"
-        hint = ""
-        problem_file = easy_file
-
+        # 检查官方每日一题（仅 EASY）
         daily_question = _get_leetcode_daily_question()
         use_daily = False
         if daily_question:
             if (
-                daily_question["difficulty"] == target_difficulty
-                and daily_question["slug"] not in used_slugs
+                daily_question["difficulty"] == "EASY"
+                and daily_question["slug"] not in easy_used_slugs
             ):
                 use_daily = True
                 problem_id = daily_question["id"]
                 title = daily_question["title"]
                 slug = daily_question["slug"]
-                hint = "今日官方每日一题！" + (f" {hint}" if hint else "")
+                with open(easy_used_file, "a") as f:
+                    f.write(f"{slug}\n")
 
-        if not use_daily:
-            if not os.path.exists(problem_file):
-                return "今日 LeetCode：题库文件不存在，请运行 fetch_leetcode.py 获取题目"
+        results = []
 
-            with open(problem_file, "r") as f:
-                problems = [line.strip() for line in f if line.strip()]
+        if use_daily:
+            url = f"https://leetcode.cn/problems/{slug}/"
+            results.append(
+                f"今日官方每日一题！ 今日 LeetCode 🟢 简单题：\n\n[{problem_id}. {title}]({url})"
+            )
 
-            available = []
-            for p in problems:
-                parts = p.split("|")
-                if len(parts) >= 3:
-                    slug = parts[2]
-                    if slug not in used_slugs:
-                        available.append(p)
+        # 1/2 概率随机一道热题 100（easy + medium）
+        day_seed = now.year * 1000 + now.day_of_year
+        random.seed(day_seed + 42)  # 不同 seed 避免和 easy 选题冲突
+        do_hot100 = random.random() < 0.5
+        random.seed()
 
-            if not available:
-                return f"今日 LeetCode：所有{difficulty}题都做完啦！🎉"
+        if do_hot100:
+            hot100_result = _pick_from_pool(hot100_file, hot100_used_file, now)
+            if hot100_result:
+                pid, ptitle, pslug, pdiff = hot100_result
+                diff_map = {
+                    "EASY": ("简单", "🟢"),
+                    "MEDIUM": ("中等", "🟡"),
+                }
+                diff_label, diff_emoji = diff_map.get(pdiff, ("中等", "🟡"))
+                url = f"https://leetcode.cn/problems/{pslug}/"
+                results.append(
+                    f"今日 LeetCode 热题 100 {diff_emoji} {diff_label}题：\n\n[{pid}. {ptitle}]({url})"
+                )
+            else:
+                results.append("热题 100 都做完啦！🎉")
 
-            day_seed = now.year * 1000 + now.day_of_year
-            random.seed(day_seed)
-            selected = random.choice(available)
-            random.seed()
+        # 如果没有每日一题、也没有随到热题 100，就从 easy 池子里选
+        if not results:
+            easy_result = _pick_from_pool(easy_file, easy_used_file, now)
+            if easy_result:
+                pid, ptitle, pslug, _ = easy_result
+                url = f"https://leetcode.cn/problems/{pslug}/"
+                results.append(f"今日 LeetCode 🟢 简单题：\n\n[{pid}. {ptitle}]({url})")
+            else:
+                results.append("今日 LeetCode：所有简单题都做完啦！🎉")
 
-            parts = selected.split("|")
-            problem_id = parts[0]
-            title = parts[1]
-            slug = parts[2]
-
-        with open(used_file, "a") as f:
-            f.write(f"{slug}\n")
-
-        url = f"https://leetcode.cn/problems/{slug}/"
-
-        header = f"今日 LeetCode {difficulty_emoji} {difficulty}题"
-        if hint:
-            header = f"{hint} {header}"
-
-        return f"""{header}：
-
-[{problem_id}. {title}]({url})"""
+        return "\n\n".join(results)
 
     except Exception as e:
         print(f"Error getting daily leetcode: {e}")
