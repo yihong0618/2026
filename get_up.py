@@ -29,6 +29,7 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 {blog_article}
 """
+TG_MORNING_TAG = "#morning"
 
 # LeetCode 题目文件路径
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
@@ -720,9 +721,11 @@ def main(
             bot = telebot.TeleBot(tele_token)
             try:
                 formatted_body = markdownify(body)
+                morning_tag = markdownify(TG_MORNING_TAG).strip()
+                telegram_body = f"{formatted_body.rstrip()}\n\n{morning_tag}"
                 bot.send_message(
                     tele_chat_id,
-                    formatted_body,
+                    telegram_body,
                     parse_mode="MarkdownV2",
                     disable_notification=True,
                 )
