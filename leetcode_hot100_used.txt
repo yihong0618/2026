@@ -1,2 +1,3 @@
 implement-trie-prefix-tree
 find-minimum-in-rotated-sorted-array
+partition-labels
