@@ -11,3 +11,4 @@ deeprouter.org
 ioerr.github.io
 rhuen.netlify.app
 sorrycc.com
+yihui.org
