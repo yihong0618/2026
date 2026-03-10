@@ -1,7 +1,10 @@
 import argparse
 import random
-import os
+import re
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
 
 import duckdb
 import pendulum
@@ -31,528 +34,557 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 """
 TG_MORNING_TAG = "#morning"
 
-# LeetCode 题目文件路径
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
 LEETCODE_USED_FILE = "leetcode_used.txt"
 LEETCODE_HOT100_FILE = "leetcode_hot100.txt"
 LEETCODE_HOT100_USED_FILE = "leetcode_hot100_used.txt"
-# 博客文章已使用网站记录文件
 BLOG_SITES_USED_FILE = "blog_sites_used.txt"
+
 TIMEZONE = "Asia/Shanghai"
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+LEETCODE_BASE_URL = "https://leetcode.cn/problems/{slug}/"
+LEETCODE_DAILY_URL = "https://leetcode.cn/graphql/"
+RUN_DATA_URL = (
+    "https://github.com/yihong0618/run/raw/refs/heads/master/run_page/data.parquet"
+)
+WIKIMEDIA_USER_AGENT = "GetUpBot/1.0 (https://github.com/yihong0618/2026)"
+BLOG_HISTORY_START_YEAR = 2005
+BLOG_HISTORY_END_YEAR = 2025
+BLOG_RANDOM_SEARCH_ATTEMPTS = 5
+BLOG_LINK_CHECK_ATTEMPTS = 10
+HOT100_RANDOM_SALT = 42
+BLOG_RANDOM_SALT = 99
+EARLY_GET_UP_HOURS = range(3, 10)
 
 BIRTH_YEAR = 1989  # change it to your birth year
+
+
+@dataclass(frozen=True)
+class LeetCodeProblem:
+    problem_id: str
+    title: str
+    slug: str
+    difficulty: str = "EASY"
+
+    @property
+    def url(self):
+        return LEETCODE_BASE_URL.format(slug=self.slug)
+
+
+@dataclass(frozen=True)
+class GetUpMessageParts:
+    is_get_up_early: bool
+    day_of_year: int
+    year_progress: str
+    running_info: str
+    history_today: str
+    leetcode: str
+    blog_article: str
+
+    def as_tuple(self):
+        return (
+            self.is_get_up_early,
+            self.day_of_year,
+            self.year_progress,
+            self.running_info,
+            self.history_today,
+            self.leetcode,
+            self.blog_article,
+        )
+
+    def render(self, get_up_time):
+        return GET_UP_MESSAGE_TEMPLATE.format(
+            get_up_time=get_up_time,
+            day_of_year=self.day_of_year,
+            year_progress=self.year_progress,
+            running_info=self.running_info,
+            history_today=self.history_today,
+            leetcode=self.leetcode,
+            blog_article=self.blog_article,
+        )
 
 
 def login(token):
     return Github(auth=Auth.Token(token))
 
 
-def _get_script_dir():
-    return os.path.dirname(os.path.abspath(__file__))
+def _now():
+    return pendulum.now(TIMEZONE)
 
 
-def _get_leetcode_daily_question():
-    """获取 LeetCode CN 每日一题
+def _data_file_path(filename):
+    return SCRIPT_DIR / filename
 
-    Returns:
-        dict: 包含 id, title, slug, difficulty 的字典，失败返回 None
-    """
-    try:
-        url = "https://leetcode.cn/graphql/"
-        headers = {"Content-Type": "application/json"}
-        query = """
-        query questionOfToday {
-            todayRecord {
-                question {
-                    questionFrontendId
-                    title
-                    titleSlug
-                    difficulty
-                    isPaidOnly
-                }
-            }
-        }
-        """
-        response = requests.post(
-            url, json={"query": query}, headers=headers, timeout=10
-        )
-        if response.ok:
-            data = response.json()
-            records = data.get("data", {}).get("todayRecord", [])
-            if records:
-                q = records[0].get("question", {})
-                if q and not q.get("isPaidOnly", False):
-                    return {
-                        "id": q.get("questionFrontendId", ""),
-                        "title": q.get("title", ""),
-                        "slug": q.get("titleSlug", ""),
-                        "difficulty": q.get(
-                            "difficulty", ""
-                        ).upper(),  # EASY, MEDIUM, HARD
-                    }
-        return None
-    except Exception as e:
-        print(f"Error getting daily question: {e}")
+
+def _daily_rng(now, salt=0):
+    day_seed = now.year * 1000 + now.day_of_year + salt
+    return random.Random(day_seed)
+
+
+def _read_non_empty_lines(path):
+    file_path = Path(path)
+    if not file_path.exists():
+        return []
+
+    with file_path.open("r", encoding="utf-8") as file:
+        return [line.strip() for line in file if line.strip()]
+
+
+def _append_line(path, value):
+    with Path(path).open("a", encoding="utf-8") as file:
+        file.write(f"{value}\n")
+
+
+def _parse_problem_line(line):
+    parts = line.split("|")
+    if len(parts) < 3:
         return None
 
+    difficulty = parts[3].upper() if len(parts) >= 4 else "EASY"
+    return LeetCodeProblem(
+        problem_id=parts[0],
+        title=parts[1],
+        slug=parts[2],
+        difficulty=difficulty,
+    )
 
-def _pick_from_pool(problem_file, used_file, now):
-    """从题库文件中随机选一道未做过的题，返回 (problem_id, title, slug, difficulty) 或 None"""
-    used_slugs = set()
-    if os.path.exists(used_file):
-        with open(used_file, "r") as f:
-            used_slugs = set(line.strip() for line in f if line.strip())
 
-    if not os.path.exists(problem_file):
-        return None
+def _load_problem_pool(problem_file):
+    problems = []
+    for line in _read_non_empty_lines(problem_file):
+        problem = _parse_problem_line(line)
+        if problem:
+            problems.append(problem)
+    return problems
 
-    with open(problem_file, "r") as f:
-        problems = [line.strip() for line in f if line.strip()]
 
-    available = []
-    for p in problems:
-        parts = p.split("|")
-        if len(parts) >= 3:
-            slug = parts[2]
-            if slug not in used_slugs:
-                available.append(parts)
-
+def _pick_problem_from_pool(problem_file, used_file, now):
+    used_slugs = set(_read_non_empty_lines(used_file))
+    available = [
+        problem
+        for problem in _load_problem_pool(problem_file)
+        if problem.slug not in used_slugs
+    ]
     if not available:
         return None
 
-    day_seed = now.year * 1000 + now.day_of_year
-    random.seed(day_seed)
-    selected = random.choice(available)
-    random.seed()
+    selected = _daily_rng(now).choice(available)
+    _append_line(used_file, selected.slug)
+    return selected
 
-    problem_id = selected[0]
-    title = selected[1]
-    slug = selected[2]
-    difficulty = selected[3].upper() if len(selected) >= 4 else "EASY"
 
-    # 记录已使用
-    with open(used_file, "a") as f:
-        f.write(f"{slug}\n")
+def _get_leetcode_daily_question():
+    query = """
+    query questionOfToday {
+        todayRecord {
+            question {
+                questionFrontendId
+                title
+                titleSlug
+                difficulty
+                isPaidOnly
+            }
+        }
+    }
+    """
 
-    return (problem_id, title, slug, difficulty)
+    try:
+        response = requests.post(
+            LEETCODE_DAILY_URL,
+            json={"query": query},
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        if not response.ok:
+            return None
+
+        records = response.json().get("data", {}).get("todayRecord", [])
+        if not records:
+            return None
+
+        question = records[0].get("question", {})
+        if not question or question.get("isPaidOnly", False):
+            return None
+
+        return LeetCodeProblem(
+            problem_id=question.get("questionFrontendId", ""),
+            title=question.get("title", ""),
+            slug=question.get("titleSlug", ""),
+            difficulty=question.get("difficulty", "").upper(),
+        )
+    except Exception as error:
+        print(f"Error getting daily question: {error}")
+        return None
+
+
+def _format_easy_problem(problem, prefix="今日 LeetCode 🟢 简单题："):
+    return f"{prefix}\n\n[{problem.problem_id}. {problem.title}]({problem.url})"
+
+
+def _format_hot100_problem(problem):
+    diff_map = {
+        "EASY": ("简单", "🟢"),
+        "MEDIUM": ("中等", "🟡"),
+    }
+    diff_label, diff_emoji = diff_map.get(problem.difficulty, ("中等", "🟡"))
+    return (
+        f"今日 LeetCode 热题 100 {diff_emoji} {diff_label}题：\n\n"
+        f"[{problem.problem_id}. {problem.title}]({problem.url})"
+    )
 
 
 def get_daily_leetcode():
     try:
-        script_dir = _get_script_dir()
-        easy_file = os.path.join(script_dir, LEETCODE_EASY_FILE)
-        easy_used_file = os.path.join(script_dir, LEETCODE_USED_FILE)
-        hot100_file = os.path.join(script_dir, LEETCODE_HOT100_FILE)
-        hot100_used_file = os.path.join(script_dir, LEETCODE_HOT100_USED_FILE)
-
-        now = pendulum.now(TIMEZONE)
-
-        # 先加载 easy 的 used_slugs 用于每日一题判断
-        easy_used_slugs = set()
-        if os.path.exists(easy_used_file):
-            with open(easy_used_file, "r") as f:
-                easy_used_slugs = set(line.strip() for line in f if line.strip())
-
-        # 检查官方每日一题（仅 EASY）
-        daily_question = _get_leetcode_daily_question()
-        use_daily = False
-        if daily_question:
-            if (
-                daily_question["difficulty"] == "EASY"
-                and daily_question["slug"] not in easy_used_slugs
-            ):
-                use_daily = True
-                problem_id = daily_question["id"]
-                title = daily_question["title"]
-                slug = daily_question["slug"]
-                with open(easy_used_file, "a") as f:
-                    f.write(f"{slug}\n")
+        now = _now()
+        easy_file = _data_file_path(LEETCODE_EASY_FILE)
+        easy_used_file = _data_file_path(LEETCODE_USED_FILE)
+        hot100_file = _data_file_path(LEETCODE_HOT100_FILE)
+        hot100_used_file = _data_file_path(LEETCODE_HOT100_USED_FILE)
 
         results = []
-
-        if use_daily:
-            url = f"https://leetcode.cn/problems/{slug}/"
+        easy_used_slugs = set(_read_non_empty_lines(easy_used_file))
+        daily_question = _get_leetcode_daily_question()
+        if (
+            daily_question
+            and daily_question.difficulty == "EASY"
+            and daily_question.slug not in easy_used_slugs
+        ):
+            _append_line(easy_used_file, daily_question.slug)
             results.append(
-                f"今日官方每日一题！ 今日 LeetCode 🟢 简单题：\n\n[{problem_id}. {title}]({url})"
+                _format_easy_problem(
+                    daily_question,
+                    prefix="今日官方每日一题！ 今日 LeetCode 🟢 简单题：",
+                )
             )
 
-        # 1/2 概率随机一道热题 100（easy + medium）
-        day_seed = now.year * 1000 + now.day_of_year
-        random.seed(day_seed + 42)  # 不同 seed 避免和 easy 选题冲突
-        do_hot100 = random.random() < 0.5
-        random.seed()
-
-        if do_hot100:
-            hot100_result = _pick_from_pool(hot100_file, hot100_used_file, now)
-            if hot100_result:
-                pid, ptitle, pslug, pdiff = hot100_result
-                diff_map = {
-                    "EASY": ("简单", "🟢"),
-                    "MEDIUM": ("中等", "🟡"),
-                }
-                diff_label, diff_emoji = diff_map.get(pdiff, ("中等", "🟡"))
-                url = f"https://leetcode.cn/problems/{pslug}/"
-                results.append(
-                    f"今日 LeetCode 热题 100 {diff_emoji} {diff_label}题：\n\n[{pid}. {ptitle}]({url})"
-                )
+        if _daily_rng(now, HOT100_RANDOM_SALT).random() < 0.5:
+            hot100_problem = _pick_problem_from_pool(hot100_file, hot100_used_file, now)
+            if hot100_problem:
+                results.append(_format_hot100_problem(hot100_problem))
             else:
                 results.append("热题 100 都做完啦！🎉")
 
-        # 如果没有每日一题、也没有随到热题 100，就从 easy 池子里选
         if not results:
-            easy_result = _pick_from_pool(easy_file, easy_used_file, now)
-            if easy_result:
-                pid, ptitle, pslug, _ = easy_result
-                url = f"https://leetcode.cn/problems/{pslug}/"
-                results.append(f"今日 LeetCode 🟢 简单题：\n\n[{pid}. {ptitle}]({url})")
+            easy_problem = _pick_problem_from_pool(easy_file, easy_used_file, now)
+            if easy_problem:
+                results.append(_format_easy_problem(easy_problem))
             else:
                 results.append("今日 LeetCode：所有简单题都做完啦！🎉")
 
         return "\n\n".join(results)
-
-    except Exception as e:
-        print(f"Error getting daily leetcode: {e}")
+    except Exception as error:
+        print(f"Error getting daily leetcode: {error}")
         return ""
+
+
+def _extract_wiki_url(event):
+    pages = event.get("pages") or []
+    if not pages:
+        return ""
+
+    return pages[0].get("content_urls", {}).get("desktop", {}).get("page", "")
+
+
+def _format_age_text(year, birth_year):
+    if not year:
+        return ""
+    if year >= birth_year:
+        return f"（那年我 {year - birth_year} 岁）"
+    return f"（我出生前 {birth_year - year} 年）"
+
+
+def _format_history_event(event, birth_year):
+    year = event.get("year")
+    text = convert(event.get("text", "").replace("\n", " ").strip(), "zh-cn")
+    wiki_url = _extract_wiki_url(event)
+    age_text = _format_age_text(year, birth_year)
+
+    if wiki_url:
+        line = f"• {year}年：[{text}]({wiki_url}) {age_text}"
+    else:
+        line = f"• {year}年：{text} {age_text}"
+    return line.rstrip()
 
 
 def get_history_today(birth_year=BIRTH_YEAR, limit=2):
     try:
-        now = pendulum.now(TIMEZONE)
+        now = _now()
         month = now.format("MM")
         day = now.format("DD")
 
-        url = f"https://api.wikimedia.org/feed/v1/wikipedia/zh/onthisday/events/{month}/{day}"
-
-        headers = {"User-Agent": "GetUpBot/1.0 (https://github.com/yihong0618/2026)"}
-
-        response = requests.get(url, headers=headers, timeout=10)
-
+        response = requests.get(
+            f"https://api.wikimedia.org/feed/v1/wikipedia/zh/onthisday/events/{month}/{day}",
+            headers={"User-Agent": WIKIMEDIA_USER_AGENT},
+            timeout=10,
+        )
         if not response.ok:
             print(f"Failed to get history today: {response.status_code}")
             return ""
 
-        data = response.json()
-        events = data.get("events", [])
-
+        events = response.json().get("events", [])
         if not events:
             return ""
 
-        current_year = now.year
         filtered_events = [
             event
             for event in events
-            if "year" in event and 1989 <= event["year"] <= current_year
+            if "year" in event and birth_year <= event["year"] <= now.year
         ]
-
         if not filtered_events:
-            filtered_events = [e for e in events if "year" in e]
-
+            filtered_events = [event for event in events if "year" in event]
         if not filtered_events:
             return ""
 
         selected_events = random.sample(
             filtered_events, min(limit, len(filtered_events))
         )
-        selected_events.sort(key=lambda x: x.get("year", 0), reverse=True)
+        selected_events.sort(key=lambda event: event.get("year", 0), reverse=True)
 
-        result_lines = ["历史上的今天：\n"]
-
-        for event in selected_events:
-            year = event.get("year")
-            text = event.get("text", "")
-
-            pages = event.get("pages", [])
-            wiki_url = ""
-            if pages and len(pages) > 0:
-                content_urls = pages[0].get("content_urls", {})
-                desktop = content_urls.get("desktop", {})
-                wiki_url = desktop.get("page", "")
-
-            if year and year >= birth_year:
-                age = year - birth_year
-                age_text = f"（那年我 {age} 岁）"
-            elif year and year < birth_year:
-                years_before = birth_year - year
-                age_text = f"（我出生前 {years_before} 年）"
-            else:
-                age_text = ""
-
-            text = text.replace("\n", " ").strip()
-            text = convert(text, "zh-cn")  # 繁体转简体
-
-            if wiki_url:
-                result_lines.append(f"• {year}年：[{text}]({wiki_url}) {age_text}")
-            else:
-                result_lines.append(f"• {year}年：{text} {age_text}")
-
-        return "\n".join(result_lines)
-
+        lines = [_format_history_event(event, birth_year) for event in selected_events]
+        return "历史上的今天：\n\n" + "\n".join(lines)
     except Exception:
         return "fail to get it"
 
 
 def _extract_domain(url):
-    """从 URL 中提取域名"""
     if not url:
         return ""
-    try:
-        from urllib.parse import urlparse
 
-        parsed = urlparse(url)
-        domain = parsed.netloc
+    try:
+        domain = urlparse(url).netloc
         if domain.startswith("www."):
-            domain = domain[4:]
+            return domain[4:]
         return domain
     except Exception:
         return ""
 
 
 def _load_used_sites():
-    """加载已使用的网站域名列表"""
-    script_dir = _get_script_dir()
-    used_file = os.path.join(script_dir, BLOG_SITES_USED_FILE)
-    if os.path.exists(used_file):
-        with open(used_file, "r") as f:
-            return set(line.strip() for line in f if line.strip())
-    return set()
+    return set(_read_non_empty_lines(_data_file_path(BLOG_SITES_USED_FILE)))
 
 
 def _save_used_site(domain):
-    """保存已使用的网站域名"""
-    script_dir = _get_script_dir()
-    used_file = os.path.join(script_dir, BLOG_SITES_USED_FILE)
-    with open(used_file, "a") as f:
-        f.write(f"{domain}\n")
+    _append_line(_data_file_path(BLOG_SITES_USED_FILE), domain)
 
 
 def _check_link_available(url, timeout=10):
-    """验证链接是否可用"""
     if not url:
         return False
+
     try:
-        # 使用 HEAD 请求快速检查链接
         response = requests.head(url, timeout=timeout, allow_redirects=True)
-        # 2xx 状态码认为是可用的
         return 200 <= response.status_code < 300
     except requests.exceptions.RequestException:
-        # 超时或请求失败，认为不可用
         return False
 
 
 def _extract_text_snippet(content, max_length=200):
-    """从 HTML/Markdown 内容中提取纯文本摘要"""
-    import re
-
     if not content:
         return ""
 
-    # 移除 HTML 标签
     text = re.sub(r"<[^>]+>", "", content)
-    # 移除 Markdown 链接 [text](url)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    # 移除 Markdown 标题标记
     text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
-    # 移除其他 Markdown 标记
     text = re.sub(r"[*`_~]", "", text)
-    # 移除多余空白
     text = " ".join(text.split())
-
-    # 截取合适长度，尽量在句子边界截断
     if len(text) <= max_length:
         return text
 
-    # 尝试在句子边界截断
     truncated = text[:max_length]
-    # 查找最后一个句号、问号或感叹号
     for punct in ["。", "？", "！", ". ", "? ", "! "]:
         last_pos = truncated.rfind(punct)
-        if last_pos > max_length * 0.5:  # 确保至少保留一半内容
+        if last_pos > max_length * 0.5:
             return text[: last_pos + len(punct)].strip()
 
-    # 如果没有找到合适的句子边界，在空格处截断
     last_space = truncated.rfind(" ")
     if last_space > 0:
         return text[:last_space] + "..."
-
     return truncated + "..."
+
+
+def _saveweb_api_url(date_str):
+    return (
+        "https://search-api.saveweb.org/api/search"
+        f"?q=(date%20%3D%20sec({date_str}))&f=false&p=0&h=true"
+    )
+
+
+def _fetch_saveweb_articles(year, month, day):
+    date_str = f"{year}-{month}-{day}"
+    response = requests.get(_saveweb_api_url(date_str), timeout=10)
+    if not response.ok:
+        return []
+
+    articles = []
+    for hit in response.json().get("hits", []):
+        link = hit.get("link", "")
+        if not link:
+            continue
+
+        article = dict(hit)
+        article["domain"] = _extract_domain(link)
+        articles.append(article)
+    return articles
+
+
+def _collect_today_articles(month, day):
+    all_articles = []
+    for year in range(BLOG_HISTORY_START_YEAR, BLOG_HISTORY_END_YEAR + 1):
+        try:
+            all_articles.extend(_fetch_saveweb_articles(year, month, day))
+        except Exception as error:
+            print(f"Error fetching articles for {year}-{month}-{day}: {error}")
+    return all_articles
+
+
+def _collect_random_articles(now):
+    rng = _daily_rng(now, BLOG_RANDOM_SALT)
+    for _ in range(BLOG_RANDOM_SEARCH_ATTEMPTS):
+        try:
+            random_year = rng.randint(BLOG_HISTORY_START_YEAR, BLOG_HISTORY_END_YEAR)
+            random_month = rng.randint(1, 12)
+            random_day = rng.randint(1, 28)
+            articles = _fetch_saveweb_articles(random_year, random_month, random_day)
+            if articles:
+                return articles
+        except Exception:
+            continue
+    return []
+
+
+def _pick_random_candidate(candidates, rng):
+    index = rng.randrange(len(candidates))
+    return candidates.pop(index)
+
+
+def _select_blog_article(all_articles, used_sites, now):
+    rng = _daily_rng(now)
+    unused_articles = [
+        article
+        for article in all_articles
+        if article.get("domain") and article["domain"] not in used_sites
+    ]
+    remaining_articles = list(all_articles)
+    checked_articles = []
+
+    for _ in range(min(BLOG_LINK_CHECK_ATTEMPTS, len(all_articles))):
+        if unused_articles:
+            candidate = _pick_random_candidate(unused_articles, rng)
+            if candidate in remaining_articles:
+                remaining_articles.remove(candidate)
+        elif remaining_articles:
+            candidate = _pick_random_candidate(remaining_articles, rng)
+        else:
+            break
+
+        link = candidate.get("link", "")
+        if link and _check_link_available(link):
+            return candidate
+        checked_articles.append(candidate)
+
+    if checked_articles:
+        return checked_articles[0]
+    if remaining_articles:
+        return remaining_articles[0]
+    return None
+
+
+def _get_article_date(selected):
+    timestamp = selected.get("date")
+    if not timestamp:
+        return ""
+
+    try:
+        article_dt = pendulum.from_timestamp(int(timestamp))
+        return article_dt.format("YYYY-MM-DD")
+    except Exception:
+        return ""
+
+
+def _get_years_ago(article_date, current_year):
+    if not article_date:
+        return None
+
+    try:
+        article_year = int(article_date.split("-")[0])
+        return current_year - article_year
+    except Exception:
+        return None
+
+
+def _format_blog_article(selected, current_year):
+    title = selected.get("title", "未知标题")
+    link = selected.get("link", "")
+    article_date = _get_article_date(selected)
+    years_ago = _get_years_ago(article_date, current_year)
+    snippet = _extract_text_snippet(selected.get("content", ""), max_length=200)
+
+    if years_ago is not None and years_ago >= 0:
+        header = f"**来自 {years_ago} 年前的博客** ({article_date})"
+    else:
+        header = "**历史上的博客**"
+
+    lines = [f"{header}：[{title}]({link})" if link else f"{header}：{title}"]
+    if snippet:
+        lines.append("")
+        lines.extend(f"> {line}" for line in snippet.splitlines() if line.strip())
+    return "\n".join(lines)
 
 
 def get_blog_article_from_history():
     """
-    获取历史上今天的博客文章 (2014-2025年)
+    获取历史上今天的博客文章 (2005-2025年)
 
     从 saveweb.org API 随机获取一篇历史上今天发布的博客文章
     会记录已使用的网站域名，尽量返回不同网站的文章
     如果当天没有文章，则随机搜索其他日期
     """
     try:
+        now = _now()
         used_sites = _load_used_sites()
-        now = pendulum.now(TIMEZONE)
-        current_year = now.year
-
-        # 尝试当前日期，范围 2014-2025
-        month = now.month
-        day = now.day
-
-        all_articles = []
-
-        # 搜索 2014-2025 年每年这一天的文章
-        for year in range(2014, 2026):
-            try:
-                # 构建 API URL
-                date_str = f"{year}-{month}-{day}"
-                api_url = f"https://search-api.saveweb.org/api/search?q=(date%20%3D%20sec({date_str}))&f=false&p=0&h=true"
-
-                response = requests.get(api_url, timeout=10)
-                if response.ok:
-                    data = response.json()
-                    hits = data.get("hits", [])
-                    for hit in hits:
-                        link = hit.get("link", "")
-                        if link:
-                            domain = _extract_domain(link)
-                            hit["domain"] = domain
-                            all_articles.append(hit)
-            except Exception as e:
-                print(f"Error fetching articles for {year}-{month}-{day}: {e}")
-                continue
+        all_articles = _collect_today_articles(now.month, now.day)
 
         if not all_articles:
-            # 如果当天没有文章，随机选一天搜索
             print("No articles found for today, trying random date...")
-            for _ in range(5):  # 尝试5次随机日期
-                try:
-                    random_year = random.randint(2014, 2025)
-                    random_month = random.randint(1, 12)
-                    random_day = random.randint(1, 28)
-                    date_str = f"{random_year}-{random_month}-{random_day}"
-                    api_url = f"https://search-api.saveweb.org/api/search?q=(date%20%3D%20sec({date_str}))&f=false&p=0&h=true"
-
-                    response = requests.get(api_url, timeout=10)
-                    if response.ok:
-                        data = response.json()
-                        hits = data.get("hits", [])
-                        for hit in hits:
-                            link = hit.get("link", "")
-                            if link:
-                                domain = _extract_domain(link)
-                                hit["domain"] = domain
-                                all_articles.append(hit)
-                        if all_articles:
-                            break
-                except Exception:
-                    continue
-
+            all_articles = _collect_random_articles(now)
         if not all_articles:
             return ""
 
-        # 优先选择未使用过的网站
-        unused_articles = [
-            a for a in all_articles if a.get("domain") and a["domain"] not in used_sites
-        ]
-
-        # 设置随机种子（基于日期）以确保同一天返回相同结果
-        day_seed = now.year * 1000 + now.day_of_year
-        random.seed(day_seed)
-
-        # 尝试选择一个可用的链接（最多尝试10次）
-        selected = None
-        checked_articles = []
-        max_attempts = min(10, len(all_articles))
-
-        for _ in range(max_attempts):
-            # 优先从未使用过的文章中选择
-            if unused_articles:
-                candidate = random.choice(unused_articles)
-                unused_articles.remove(candidate)
-            elif all_articles:
-                candidate = random.choice(all_articles)
-                all_articles.remove(candidate)
-            else:
-                break
-
-            link = candidate.get("link", "")
-            # 验证链接是否可用
-            if link and _check_link_available(link):
-                selected = candidate
-                break
-            else:
-                # 记录已检查的文章，如果都不可用，最后选一个用
-                checked_articles.append(candidate)
-
-        random.seed()  # 重置随机种子
-
-        # 如果所有链接都不可用，从已检查的文章中选第一个（会返回失效链接，但总比没有好）
-        if selected is None and checked_articles:
-            selected = checked_articles[0]
-
-        if selected is None:
+        selected = _select_blog_article(all_articles, used_sites, now)
+        if not selected:
             return ""
 
-        # 记录使用的网站
         domain = selected.get("domain", "")
         if domain and domain not in used_sites:
             _save_used_site(domain)
 
-        title = selected.get("title", "未知标题")
-        link = selected.get("link", "")
-
-        # 格式化日期
-        article_date = ""
-        if selected.get("date"):
-            try:
-                article_ts = int(selected["date"])
-                article_dt = pendulum.from_timestamp(article_ts)
-                article_date = article_dt.format("YYYY-MM-DD")
-            except Exception:
-                pass
-
-        # 计算文章发布距今多少年（类似年龄计算）
-        years_ago = None
-        if article_date:
-            try:
-                article_year = int(article_date.split("-")[0])
-                years_ago = current_year - article_year
-            except Exception:
-                pass
-
-        # 提取内容摘要作为引用
-        content = selected.get("content", "")
-        snippet = _extract_text_snippet(content, max_length=200)
-
-        # 构建结果
-        result_lines = []
-
-        # 标题：来自 xx 年前的博客
-        if years_ago is not None and years_ago >= 0:
-            header = f"**来自 {years_ago} 年前的博客** ({article_date})"
-        else:
-            header = "**历史上的博客**"
-
-        if link:
-            result_lines.append(f"{header}：[{title}]({link})")
-        else:
-            result_lines.append(f"{header}：{title}")
-
-        # 添加引用（如果有内容）
-        if snippet:
-            result_lines.append("")
-            # 将摘要转换为 Markdown 引用格式
-            quoted_lines = [f"> {line}" for line in snippet.split("\n") if line.strip()]
-            result_lines.extend(quoted_lines)
-
-        return "\n".join(result_lines)
-
-    except Exception as e:
-        print(f"Error getting blog article: {e}")
+        return _format_blog_article(selected, now.year)
+    except Exception as error:
+        print(f"Error getting blog article: {error}")
         return ""
+
+
+def _query_running_summary(conn, parquet_path, where_clause):
+    query = f"""
+    SELECT
+        COUNT(*) as count,
+        ROUND(SUM(distance)/1000, 2) as total_km
+    FROM read_parquet('{parquet_path}')
+    WHERE {where_clause}
+    """
+    return conn.execute(query).fetchone()
+
+
+def _format_running_line(label, result):
+    if result and result[0] > 0:
+        return f"• {label}跑了 {result[1]} 公里"
+    return f"• {label}没跑"
 
 
 def get_running_distance():
     try:
-        url = "https://github.com/yihong0618/run/raw/refs/heads/master/run_page/data.parquet"
-        response = requests.get(url)
-
+        response = requests.get(RUN_DATA_URL)
         if not response.ok:
             return ""
 
@@ -560,86 +592,62 @@ def get_running_distance():
             temp_file.write(response.content)
             temp_file.flush()
 
+            now = _now()
+            yesterday = now.subtract(days=1)
+            tomorrow = now.add(days=1)
+
             with duckdb.connect() as conn:
-                now = pendulum.now(TIMEZONE)
-                yesterday = now.subtract(days=1)
-                month_start = now.start_of("month")
-                year_start = now.start_of("year")
+                yesterday_result = _query_running_summary(
+                    conn,
+                    temp_file.name,
+                    f"DATE(start_date_local) = '{yesterday.to_date_string()}'",
+                )
+                month_result = _query_running_summary(
+                    conn,
+                    temp_file.name,
+                    (
+                        f"start_date_local >= '{now.start_of('month').to_date_string()}' "
+                        f"AND start_date_local < '{tomorrow.to_date_string()}'"
+                    ),
+                )
+                year_result = _query_running_summary(
+                    conn,
+                    temp_file.name,
+                    (
+                        f"start_date_local >= '{now.start_of('year').to_date_string()}' "
+                        f"AND start_date_local < '{tomorrow.to_date_string()}'"
+                    ),
+                )
 
-                yesterday_query = f"""
-                SELECT
-                    COUNT(*) as count,
-                    ROUND(SUM(distance)/1000, 2) as total_km
-                FROM read_parquet('{temp_file.name}')
-                WHERE DATE(start_date_local) = '{yesterday.to_date_string()}'
-                """
-
-                month_query = f"""
-                SELECT
-                    COUNT(*) as count,
-                    ROUND(SUM(distance)/1000, 2) as total_km
-                FROM read_parquet('{temp_file.name}')
-                WHERE start_date_local >= '{month_start.to_date_string()}'
-                    AND start_date_local < '{now.add(days=1).to_date_string()}'
-                """
-
-                year_query = f"""
-                SELECT
-                    COUNT(*) as count,
-                    ROUND(SUM(distance)/1000, 2) as total_km
-                FROM read_parquet('{temp_file.name}')
-                WHERE start_date_local >= '{year_start.to_date_string()}'
-                    AND start_date_local < '{now.add(days=1).to_date_string()}'
-                """
-
-                yesterday_result = conn.execute(yesterday_query).fetchone()
-                month_result = conn.execute(month_query).fetchone()
-                year_result = conn.execute(year_query).fetchone()
-
-            running_info_parts = []
-
-            if yesterday_result and yesterday_result[0] > 0:
-                running_info_parts.append(f"• 昨天跑了 {yesterday_result[1]} 公里")
-            else:
-                running_info_parts.append("• 昨天没跑")
-
-            if month_result and month_result[0] > 0:
-                running_info_parts.append(f"• 本月跑了 {month_result[1]} 公里")
-            else:
-                running_info_parts.append("• 本月没跑")
-
-            if year_result and year_result[0] > 0:
-                running_info_parts.append(f"• 今年跑了 {year_result[1]} 公里")
-            else:
-                running_info_parts.append("• 今年没跑")
-
-            return "Run：\n\n" + "\n".join(running_info_parts)
-
-    except Exception as e:
-        print(f"Error getting running data: {e}")
+        running_info_parts = [
+            _format_running_line("昨天", yesterday_result),
+            _format_running_line("本月", month_result),
+            _format_running_line("今年", year_result),
+        ]
+        return "Run：\n\n" + "\n".join(running_info_parts)
+    except Exception as error:
+        print(f"Error getting running data: {error}")
         return ""
 
-    return ""
+
+def get_day_of_year(now=None):
+    current_time = now or _now()
+    return current_time.day_of_year
 
 
-def get_day_of_year():
-    now = pendulum.now(TIMEZONE)
-    return now.day_of_year
+def get_year_progress(now=None):
+    current_time = now or _now()
+    day_of_year = current_time.day_of_year
 
-
-def get_year_progress():
-    now = pendulum.now(TIMEZONE)
-    day_of_year = now.day_of_year
-
-    is_leap_year = now.year % 4 == 0 and (now.year % 100 != 0 or now.year % 400 == 0)
+    is_leap_year = current_time.year % 4 == 0 and (
+        current_time.year % 100 != 0 or current_time.year % 400 == 0
+    )
     total_days = 366 if is_leap_year else 365
 
     progress_percent = (day_of_year / total_days) * 100
-
     progress_bar_width = 20
     filled_blocks = int((day_of_year / total_days) * progress_bar_width)
     empty_blocks = progress_bar_width - filled_blocks
-
     progress_bar = "█" * filled_blocks + "░" * empty_blocks
 
     return f"{progress_bar} {progress_percent:.1f}% ({day_of_year}/{total_days})"
@@ -649,36 +657,51 @@ def get_today_get_up_status(issue):
     comments = list(issue.get_comments())
     if not comments:
         return False
+
     latest_comment = comments[-1]
-    now = pendulum.now(TIMEZONE)
-    latest_day = pendulum.instance(latest_comment.created_at).in_timezone(
-        "Asia/Shanghai"
+    latest_day = pendulum.instance(latest_comment.created_at).in_timezone(TIMEZONE)
+    return latest_day.date() == _now().date()
+
+
+def _is_get_up_early(now):
+    return now.hour in EARLY_GET_UP_HOURS
+
+
+def _build_get_up_message_parts(now=None):
+    current_time = now or _now()
+    return GetUpMessageParts(
+        is_get_up_early=_is_get_up_early(current_time),
+        day_of_year=get_day_of_year(current_time),
+        year_progress=get_year_progress(current_time),
+        running_info=get_running_distance(),
+        history_today=get_history_today(),
+        leetcode=get_daily_leetcode(),
+        blog_article=get_blog_article_from_history(),
     )
-    return latest_day.date() == now.date()
+
+
+def _send_telegram_message(body, tele_token, tele_chat_id):
+    if not tele_token or not tele_chat_id:
+        return
+
+    bot = telebot.TeleBot(tele_token)
+    try:
+        formatted_body = markdownify(body)
+        morning_tag = markdownify(TG_MORNING_TAG).strip()
+        telegram_body = f"{formatted_body.rstrip()}\n\n{morning_tag}"
+        bot.send_message(
+            tele_chat_id,
+            telegram_body,
+            parse_mode="MarkdownV2",
+            disable_notification=True,
+        )
+    except Exception as error:
+        print(str(error))
 
 
 def make_get_up_message(github_token):
-    now = pendulum.now(TIMEZONE)
-    # 3 - 9 means early for me
-    # 3 means 我喝多了起来上厕所
-    is_get_up_early = 3 <= now.hour <= 9
-
-    day_of_year = get_day_of_year()
-    year_progress = get_year_progress()
-    running_info = get_running_distance()
-    history_today = get_history_today()
-    leetcode = get_daily_leetcode()
-    blog_article = get_blog_article_from_history()
-
-    return (
-        is_get_up_early,
-        day_of_year,
-        year_progress,
-        running_info,
-        history_today,
-        leetcode,
-        blog_article,
-    )
+    _ = github_token
+    return _build_get_up_message_parts().as_tuple()
 
 
 def main(
@@ -687,53 +710,22 @@ def main(
     tele_token,
     tele_chat_id,
 ):
-    u = login(github_token)
-    repo = u.get_repo(repo_name)
+    repo = login(github_token).get_repo(repo_name)
     issue = repo.get_issue(GET_UP_ISSUE_NUMBER)
-    is_today = get_today_get_up_status(issue)
-    if is_today:
+    if get_today_get_up_status(issue):
         print("Today I have recorded the wake up time")
         return
 
-    (
-        is_get_up_early,
-        day_of_year,
-        year_progress,
-        running_info,
-        history_today,
-        leetcode,
-        blog_article,
-    ) = make_get_up_message(github_token)
-    get_up_time = pendulum.now(TIMEZONE).to_datetime_string()
-
-    body = GET_UP_MESSAGE_TEMPLATE.format(
-        get_up_time=get_up_time,
-        day_of_year=day_of_year,
-        year_progress=year_progress,
-        running_info=running_info,
-        history_today=history_today,
-        leetcode=leetcode,
-        blog_article=blog_article,
-    )
-
-    if is_get_up_early:
-        if tele_token and tele_chat_id:
-            bot = telebot.TeleBot(tele_token)
-            try:
-                formatted_body = markdownify(body)
-                morning_tag = markdownify(TG_MORNING_TAG).strip()
-                telegram_body = f"{formatted_body.rstrip()}\n\n{morning_tag}"
-                bot.send_message(
-                    tele_chat_id,
-                    telegram_body,
-                    parse_mode="MarkdownV2",
-                    disable_notification=True,
-                )
-            except Exception as e:
-                print(str(e))
-        issue.create_comment(body)
-    else:
+    now = _now()
+    if not _is_get_up_early(now):
         print("You wake up late")
+        return
+
+    message_parts = _build_get_up_message_parts(now)
+    body = message_parts.render(now.to_datetime_string())
+
+    _send_telegram_message(body, tele_token, tele_chat_id)
+    issue.create_comment(body)
 
 
 if __name__ == "__main__":
