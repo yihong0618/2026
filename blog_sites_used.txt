@@ -12,3 +12,4 @@ ioerr.github.io
 rhuen.netlify.app
 sorrycc.com
 yihui.org
+lawrenceli.me
