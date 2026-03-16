@@ -4,3 +4,4 @@ partition-labels
 decode-string
 coin-change
 product-of-array-except-self
+rotate-array
