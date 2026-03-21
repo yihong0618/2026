@@ -49,3 +49,4 @@ existence-of-a-substring-in-a-string-and-its-reverse
 complement-of-base-10-integer
 left-and-right-sum-differences
 find-users-with-valid-e-mails
+flip-square-submatrix-vertically
