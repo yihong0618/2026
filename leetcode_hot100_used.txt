@@ -9,3 +9,4 @@ container-with-most-water
 climbing-stairs
 path-sum-iii
 longest-increasing-subsequence
+min-stack
