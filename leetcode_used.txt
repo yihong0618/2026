@@ -51,3 +51,4 @@ left-and-right-sum-differences
 find-users-with-valid-e-mails
 flip-square-submatrix-vertically
 determine-whether-matrix-can-be-obtained-by-rotation
+minimum-operations-to-exceed-threshold-value-i
