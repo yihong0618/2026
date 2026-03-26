@@ -9,3 +9,4 @@ kling-creator
 wcwidth
 duckdb
 zhconv
+terraink-py

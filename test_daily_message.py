@@ -21,6 +21,8 @@ STATE_FILES = [
     get_up.LEETCODE_HOT100_FILE,
     get_up.LEETCODE_HOT100_USED_FILE,
     get_up.BLOG_SITES_USED_FILE,
+    get_up.CHINESE_CITIES_FILE,
+    get_up.CITIES_USED_FILE,
 ]
 
 
@@ -76,9 +78,16 @@ def main():
         running_info = run_component("跑步信息", get_up.get_running_distance)
         history_today = run_component("历史上的今天", get_up.get_history_today)
         leetcode = run_component("今日 LeetCode", get_up.get_daily_leetcode)
-        blog_article = run_component(
-            "历史上的今天博客", get_up.get_blog_article_from_history
-        )
+        blog_article = run_component("历史上的今天博客", get_up.get_blog_article_from_history)
+        city_info_result = run_component("今日城市", get_up.get_random_city)
+        city_info = city_info_result[0] if city_info_result else ""
+        city_name = city_info_result[1] if city_info_result else ""
+        poster_path = ""
+        if city_name:
+            poster_path = run_component(
+                "城市海报",
+                lambda: get_up._generate_city_poster(city_name),
+            )
 
         get_up_time = now.to_datetime_string()
         body = get_up.GET_UP_MESSAGE_TEMPLATE.format(
@@ -89,6 +98,7 @@ def main():
             history_today=history_today,
             leetcode=leetcode,
             blog_article=blog_article,
+            city_info=city_info,
         )
 
     print("=" * 60, flush=True)
@@ -98,6 +108,8 @@ def main():
     print(flush=True)
     print("=" * 60, flush=True)
     print(f"是否早起: {'是' if is_get_up_early else '否'}", flush=True)
+    if poster_path:
+        print(f"城市海报: {poster_path}", flush=True)
     print("=" * 60, flush=True)
 
 

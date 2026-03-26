@@ -4,7 +4,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import duckdb
 import pendulum
@@ -12,6 +12,8 @@ import requests
 import telebot
 from github import Auth, Github
 from telegramify_markdown import markdownify
+from terraink_py.api import generate_poster
+from terraink_py.models import PosterRequest
 from zhconv import convert
 
 # 1 real get up
@@ -30,6 +32,8 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 
 {history_today}
 
+{city_info}
+
 {blog_article}
 """
 TG_MORNING_TAG = "#morning"
@@ -39,6 +43,11 @@ LEETCODE_USED_FILE = "leetcode_used.txt"
 LEETCODE_HOT100_FILE = "leetcode_hot100.txt"
 LEETCODE_HOT100_USED_FILE = "leetcode_hot100_used.txt"
 BLOG_SITES_USED_FILE = "blog_sites_used.txt"
+CHINESE_CITIES_FILE = "chinese_cities.txt"
+CITIES_USED_FILE = "cities_used.txt"
+
+CITY_WIKI_BASE_URL = "https://zh.wikipedia.org/wiki/{city}"
+CITY_RANDOM_SALT = 77
 
 TIMEZONE = "Asia/Shanghai"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -81,6 +90,8 @@ class GetUpMessageParts:
     history_today: str
     leetcode: str
     blog_article: str
+    city_info: str
+    city_poster_path: str
 
     def as_tuple(self):
         return (
@@ -91,6 +102,8 @@ class GetUpMessageParts:
             self.history_today,
             self.leetcode,
             self.blog_article,
+            self.city_info,
+            self.city_poster_path,
         )
 
     def render(self, get_up_time):
@@ -102,6 +115,7 @@ class GetUpMessageParts:
             history_today=self.history_today,
             leetcode=self.leetcode,
             blog_article=self.blog_article,
+            city_info=self.city_info,
         )
 
 
@@ -258,7 +272,7 @@ def get_daily_leetcode():
                 )
             )
 
-        if _daily_rng(now, HOT100_RANDOM_SALT).random() < 0.5:
+        if not results and _daily_rng(now, HOT100_RANDOM_SALT).random() < 0.5:
             hot100_problem = _pick_problem_from_pool(hot100_file, hot100_used_file, now)
             if hot100_problem:
                 results.append(_format_hot100_problem(hot100_problem))
@@ -276,6 +290,75 @@ def get_daily_leetcode():
     except Exception as error:
         print(f"Error getting daily leetcode: {error}")
         return ""
+
+
+def _get_city_wiki_url(wiki_title):
+    return CITY_WIKI_BASE_URL.format(city=quote(wiki_title, safe=""))
+
+
+def _parse_city_line(line):
+    parts = line.split("|", 1)
+    city_name = parts[0].strip()
+    wiki_title = parts[1].strip() if len(parts) > 1 else city_name + "市"
+    return city_name, wiki_title
+
+
+def get_random_city():
+    try:
+        now = _now()
+        cities_file = _data_file_path(CHINESE_CITIES_FILE)
+        used_file = _data_file_path(CITIES_USED_FILE)
+
+        raw_lines = _read_non_empty_lines(cities_file)
+        all_entries = [_parse_city_line(line) for line in raw_lines]
+        used_cities = set(_read_non_empty_lines(used_file))
+        total_used = len(used_cities)
+
+        available = [
+            (name, wiki) for name, wiki in all_entries if name not in used_cities
+        ]
+        if not available:
+            return "", "", len(all_entries)
+
+        city_name, wiki_title = _daily_rng(now, CITY_RANDOM_SALT).choice(available)
+        _append_line(used_file, city_name)
+        total_used += 1
+
+        wiki_url = _get_city_wiki_url(wiki_title)
+        city_info = (
+            f"今日城市 🏙️：[{city_name}]({wiki_url})"
+            f"（已探索 {total_used}/{len(all_entries)} 个地级市）"
+        )
+        return city_info, city_name, total_used
+    except Exception as error:
+        print(f"Error getting random city: {error}")
+        return "", "", 0
+
+
+def _generate_city_poster(city_name):
+    if not city_name:
+        return ""
+    try:
+        output_dir = SCRIPT_DIR / "city_posters"
+        output_dir.mkdir(exist_ok=True)
+        output_path = output_dir / f"{city_name}.png"
+
+        request = PosterRequest(
+            output=output_path,
+            formats=("png",),
+            location=city_name,
+            language="zh",
+            distance_m=8000.0,
+            dpi=150,
+            theme="random",
+            cache_dir=SCRIPT_DIR / ".terraink-cache",
+        )
+        result = generate_poster(request)
+        if result.files:
+            return str(result.files[0])
+    except Exception as error:
+        print(f"Error generating city poster: {error}")
+    return ""
 
 
 def _extract_wiki_url(event):
@@ -307,7 +390,7 @@ def _format_history_event(event, birth_year):
     return line.rstrip()
 
 
-def get_history_today(birth_year=BIRTH_YEAR, limit=2):
+def get_history_today(birth_year=BIRTH_YEAR, limit=1):
     try:
         now = _now()
         month = now.format("MM")
@@ -336,9 +419,8 @@ def get_history_today(birth_year=BIRTH_YEAR, limit=2):
         if not filtered_events:
             return ""
 
-        selected_events = random.sample(
-            filtered_events, min(limit, len(filtered_events))
-        )
+        rng = _daily_rng(now)
+        selected_events = rng.sample(filtered_events, min(limit, len(filtered_events)))
         selected_events.sort(key=lambda event: event.get("year", 0), reverse=True)
 
         lines = [_format_history_event(event, birth_year) for event in selected_events]
@@ -669,6 +751,8 @@ def _is_get_up_early(now):
 
 def _build_get_up_message_parts(now=None):
     current_time = now or _now()
+    city_info, city_name, _ = get_random_city()
+    city_poster_path = _generate_city_poster(city_name) if city_name else ""
     return GetUpMessageParts(
         is_get_up_early=_is_get_up_early(current_time),
         day_of_year=get_day_of_year(current_time),
@@ -677,10 +761,14 @@ def _build_get_up_message_parts(now=None):
         history_today=get_history_today(),
         leetcode=get_daily_leetcode(),
         blog_article=get_blog_article_from_history(),
+        city_info=city_info,
+        city_poster_path=city_poster_path,
     )
 
 
-def _send_telegram_message(body, tele_token, tele_chat_id):
+def _send_telegram_message(
+    body, tele_token, tele_chat_id, poster_path="", city_info=""
+):
     if not tele_token or not tele_chat_id:
         return
 
@@ -695,6 +783,16 @@ def _send_telegram_message(body, tele_token, tele_chat_id):
             parse_mode="MarkdownV2",
             disable_notification=True,
         )
+        if poster_path and Path(poster_path).exists():
+            caption = markdownify(city_info) if city_info else None
+            with open(poster_path, "rb") as photo:
+                bot.send_photo(
+                    tele_chat_id,
+                    photo,
+                    caption=caption,
+                    parse_mode="MarkdownV2" if caption else None,
+                    disable_notification=True,
+                )
     except Exception as error:
         print(str(error))
 
@@ -724,7 +822,13 @@ def main(
     message_parts = _build_get_up_message_parts(now)
     body = message_parts.render(now.to_datetime_string())
 
-    _send_telegram_message(body, tele_token, tele_chat_id)
+    _send_telegram_message(
+        body,
+        tele_token,
+        tele_chat_id,
+        message_parts.city_poster_path,
+        message_parts.city_info,
+    )
     issue.create_comment(body)
 
 

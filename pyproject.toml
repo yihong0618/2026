@@ -16,6 +16,7 @@ dependencies = [
     "types-requests>=2.32.0",
     "wcwidth>=0.2.13",
     "zhconv>=1.4.3",
+    "terraink-py>=0.6.0",
 ]
 
 [tool.mypy]
