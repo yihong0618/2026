@@ -37,6 +37,8 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 {blog_article}
 """
 TG_MORNING_TAG = "#morning"
+TELEGRAM_CAPTION_LIMIT = 1024
+CITY_POSTERS_DIR = "city_posters"
 
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
 LEETCODE_USED_FILE = "leetcode_used.txt"
@@ -339,9 +341,7 @@ def _generate_city_poster(city_name):
     if not city_name:
         return ""
     try:
-        output_dir = SCRIPT_DIR / "city_posters"
-        output_dir.mkdir(exist_ok=True)
-        output_path = output_dir / f"{city_name}.png"
+        output_path = _city_poster_output_path(city_name)
 
         request = PosterRequest(
             output=output_path,
@@ -359,6 +359,12 @@ def _generate_city_poster(city_name):
     except Exception as error:
         print(f"Error generating city poster: {error}")
     return ""
+
+
+def _city_poster_output_path(city_name):
+    output_dir = SCRIPT_DIR / CITY_POSTERS_DIR
+    output_dir.mkdir(exist_ok=True)
+    return output_dir / f"{city_name}.png"
 
 
 def _extract_wiki_url(event):
@@ -774,27 +780,49 @@ def _send_telegram_message(
 
     bot = telebot.TeleBot(tele_token)
     try:
-        formatted_body = markdownify(body)
-        morning_tag = markdownify(TG_MORNING_TAG).strip()
-        telegram_body = f"{formatted_body.rstrip()}\n\n{morning_tag}"
+        telegram_body = _build_telegram_body(body)
+        poster_file = Path(poster_path) if poster_path else None
+        has_poster = bool(poster_file and poster_file.exists())
+
+        if has_poster and _can_send_as_single_telegram_photo_post(telegram_body):
+            with poster_file.open("rb") as photo:
+                bot.send_photo(
+                    tele_chat_id,
+                    photo,
+                    caption=telegram_body,
+                    parse_mode="MarkdownV2",
+                    disable_notification=True,
+                )
+            return
+
         bot.send_message(
             tele_chat_id,
             telegram_body,
             parse_mode="MarkdownV2",
             disable_notification=True,
         )
-        if poster_path and Path(poster_path).exists():
-            caption = markdownify(city_info) if city_info else None
-            with open(poster_path, "rb") as photo:
+        if has_poster:
+            caption = markdownify(city_info).strip() if city_info else None
+            with poster_file.open("rb") as photo:
                 bot.send_photo(
                     tele_chat_id,
                     photo,
-                    caption=caption,
+                    caption=caption or None,
                     parse_mode="MarkdownV2" if caption else None,
                     disable_notification=True,
                 )
     except Exception as error:
         print(str(error))
+
+
+def _build_telegram_body(body):
+    formatted_body = markdownify(body).rstrip()
+    morning_tag = markdownify(TG_MORNING_TAG).strip()
+    return f"{formatted_body}\n\n{morning_tag}"
+
+
+def _can_send_as_single_telegram_photo_post(telegram_body):
+    return len(telegram_body) <= TELEGRAM_CAPTION_LIMIT
 
 
 def make_get_up_message(github_token):

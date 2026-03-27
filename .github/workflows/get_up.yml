@@ -24,6 +24,12 @@ jobs:
         run: |
           pip install -r requirements.txt
 
+      - name: Install Chinese fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          fc-cache -fv
+
       - name: GET UP
         run: |
           python get_up.py ${{ secrets.G_T }} ${{ github.repository }}  --weather_message ": ${{ github.event.inputs.message }}" --tele_token ${{ secrets.TG_TOKEN }} --tele_chat_id ${{ secrets.TG_CHAT_ID }}
@@ -32,6 +38,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add .
+          git add blog_sites_used.txt cities_used.txt leetcode_used.txt leetcode_hot100_used.txt city_posters
           git commit -m "generated today pic" || echo "no need to commit "
           git push || echo "no file change"
