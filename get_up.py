@@ -1,6 +1,7 @@
 import argparse
 import random
 import re
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,33 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 TG_MORNING_TAG = "#morning"
 TELEGRAM_CAPTION_LIMIT = 1024
 CITY_POSTERS_DIR = "city_posters"
+CJK_FONT_FAMILY_KEYWORDS = (
+    "Noto Sans CJK",
+    "Noto Sans SC",
+    "Noto Serif CJK",
+    "Source Han Sans",
+    "Source Han Serif",
+    "WenQuanYi",
+    "Arial Unicode",
+    "Hiragino Sans GB",
+    "Heiti SC",
+    "Songti SC",
+)
+CJK_FONT_FILE_CANDIDATES = (
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+    "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSerifCJKsc-Regular.otf",
+    "/usr/share/fonts/truetype/noto/NotoSansCJKsc-Regular.otf",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    "/System/Library/Fonts/STHeiti Light.ttc",
+    "/System/Library/Fonts/STHeiti Medium.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+)
 
 LEETCODE_EASY_FILE = "leetcode_easy.txt"
 LEETCODE_USED_FILE = "leetcode_used.txt"
@@ -299,10 +327,17 @@ def _get_city_wiki_url(wiki_title):
 
 
 def _parse_city_line(line):
-    parts = line.split("|", 1)
+    parts = [part.strip() for part in line.split("|")]
     city_name = parts[0].strip()
     wiki_title = parts[1].strip() if len(parts) > 1 else city_name + "市"
-    return city_name, wiki_title
+    province_name = parts[2].strip() if len(parts) > 2 else ""
+    return city_name, wiki_title, province_name
+
+
+def _format_city_post_label(city_name, province_name):
+    if province_name:
+        return f"{province_name}·{city_name}"
+    return city_name
 
 
 def get_random_city():
@@ -317,18 +352,23 @@ def get_random_city():
         total_used = len(used_cities)
 
         available = [
-            (name, wiki) for name, wiki in all_entries if name not in used_cities
+            (name, wiki, province)
+            for name, wiki, province in all_entries
+            if name not in used_cities
         ]
         if not available:
             return "", "", len(all_entries)
 
-        city_name, wiki_title = _daily_rng(now, CITY_RANDOM_SALT).choice(available)
+        city_name, wiki_title, province_name = _daily_rng(now, CITY_RANDOM_SALT).choice(
+            available
+        )
         _append_line(used_file, city_name)
         total_used += 1
 
         wiki_url = _get_city_wiki_url(wiki_title)
+        post_label = _format_city_post_label(city_name, province_name)
         city_info = (
-            f"今日城市 🏙️：[{city_name}]({wiki_url})"
+            f"今日城市 🏙️：[{post_label}]({wiki_url})"
             f"（已探索 {total_used}/{len(all_entries)} 个地级市）"
         )
         return city_info, city_name, total_used
@@ -342,6 +382,7 @@ def _generate_city_poster(city_name):
         return ""
     try:
         output_path = _city_poster_output_path(city_name)
+        font_file = _resolve_city_poster_font_file()
 
         request = PosterRequest(
             output=output_path,
@@ -351,6 +392,7 @@ def _generate_city_poster(city_name):
             distance_m=8000.0,
             dpi=150,
             theme="random",
+            font_file=font_file,
             cache_dir=SCRIPT_DIR / ".terraink-cache",
         )
         result = generate_poster(request)
@@ -365,6 +407,47 @@ def _city_poster_output_path(city_name):
     output_dir = SCRIPT_DIR / CITY_POSTERS_DIR
     output_dir.mkdir(exist_ok=True)
     return output_dir / f"{city_name}.png"
+
+
+def _resolve_city_poster_font_file():
+    font_file = _find_fontconfig_cjk_font()
+    if font_file is not None:
+        return font_file
+
+    for candidate in CJK_FONT_FILE_CANDIDATES:
+        path = Path(candidate)
+        if path.exists():
+            return path
+    return None
+
+
+def _find_fontconfig_cjk_font():
+    try:
+        result = subprocess.run(
+            ["fc-list", ":lang=zh", "-f", "%{family}\t%{file}\n"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+    fallback = None
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        family, _, file_path = line.partition("\t")
+        path = Path(file_path.strip())
+        if not file_path or not path.exists():
+            continue
+        if fallback is None:
+            fallback = path
+        normalized_family = family.lower()
+        if any(
+            keyword.lower() in normalized_family for keyword in CJK_FONT_FAMILY_KEYWORDS
+        ):
+            return path
+    return fallback
 
 
 def _extract_wiki_url(event):
