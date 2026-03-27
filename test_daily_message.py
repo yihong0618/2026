@@ -35,6 +35,8 @@ def isolated_state_files():
         for filename in STATE_FILES:
             source = original_script_dir / filename
             target = temp_dir / filename
+            # 创建父目录（如 data/ 子目录）
+            target.parent.mkdir(parents=True, exist_ok=True)
             if source.exists():
                 shutil.copy2(source, target)
             else:
@@ -78,7 +80,9 @@ def main():
         running_info = run_component("跑步信息", get_up.get_running_distance)
         history_today = run_component("历史上的今天", get_up.get_history_today)
         leetcode = run_component("今日 LeetCode", get_up.get_daily_leetcode)
-        blog_article = run_component("历史上的今天博客", get_up.get_blog_article_from_history)
+        blog_article = run_component(
+            "历史上的今天博客", get_up.get_blog_article_from_history
+        )
         city_info_result = run_component("今日城市", get_up.get_random_city)
         city_info = city_info_result[0] if city_info_result else ""
         city_name = city_info_result[1] if city_info_result else ""
