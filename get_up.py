@@ -68,13 +68,13 @@ CJK_FONT_FILE_CANDIDATES = (
     "/Library/Fonts/Arial Unicode.ttf",
 )
 
-LEETCODE_EASY_FILE = "leetcode_easy.txt"
-LEETCODE_USED_FILE = "leetcode_used.txt"
-LEETCODE_HOT100_FILE = "leetcode_hot100.txt"
-LEETCODE_HOT100_USED_FILE = "leetcode_hot100_used.txt"
-BLOG_SITES_USED_FILE = "blog_sites_used.txt"
-CHINESE_CITIES_FILE = "chinese_cities.txt"
-CITIES_USED_FILE = "cities_used.txt"
+LEETCODE_EASY_FILE = "data/leetcode_easy.txt"
+LEETCODE_USED_FILE = "data/leetcode_used.txt"
+LEETCODE_HOT100_FILE = "data/leetcode_hot100.txt"
+LEETCODE_HOT100_USED_FILE = "data/leetcode_hot100_used.txt"
+BLOG_SITES_USED_FILE = "data/blog_sites_used.txt"
+CHINESE_CITIES_FILE = "data/chinese_cities.txt"
+CITIES_USED_FILE = "data/cities_used.txt"
 
 CITY_WIKI_BASE_URL = "https://zh.wikipedia.org/wiki/{city}"
 CITY_RANDOM_SALT = 77
