@@ -54,3 +54,4 @@ determine-whether-matrix-can-be-obtained-by-rotation
 minimum-operations-to-exceed-threshold-value-i
 minimum-number-of-moves-to-seat-everyone
 matrix-similarity-after-cyclic-shifts
+maximize-sum-of-array-after-k-negations
