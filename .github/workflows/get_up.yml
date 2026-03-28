@@ -38,6 +38,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add blog_sites_used.txt cities_used.txt leetcode_used.txt leetcode_hot100_used.txt city_posters
+          git add .
           git commit -m "generated today pic" || echo "no need to commit "
           git push || echo "no file change"
