@@ -56,3 +56,4 @@ minimum-number-of-moves-to-seat-everyone
 matrix-similarity-after-cyclic-shifts
 maximize-sum-of-array-after-k-negations
 partition-array-into-three-parts-with-equal-sum
+check-if-strings-can-be-made-equal-with-operations-i
