@@ -58,3 +58,4 @@ maximize-sum-of-array-after-k-negations
 partition-array-into-three-parts-with-equal-sum
 check-if-strings-can-be-made-equal-with-operations-i
 shan-chu-lian-biao-de-jie-dian-lcof
+find-books-with-no-available-copies
