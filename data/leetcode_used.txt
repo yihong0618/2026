@@ -61,3 +61,4 @@ shan-chu-lian-biao-de-jie-dian-lcof
 find-books-with-no-available-copies
 robot-return-to-origin
 apple-redistribution-into-boxes
+check-if-any-element-has-prime-frequency
