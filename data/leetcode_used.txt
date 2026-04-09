@@ -62,3 +62,4 @@ find-books-with-no-available-copies
 robot-return-to-origin
 apple-redistribution-into-boxes
 check-if-any-element-has-prime-frequency
+minimum-distance-between-three-equal-elements-i
