@@ -43,3 +43,4 @@ newzone.top
 knightyun.github.io
 leovan.me
 hutusi.com
+darmau.design
