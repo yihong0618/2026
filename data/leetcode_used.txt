@@ -65,3 +65,4 @@ check-if-any-element-has-prime-frequency
 minimum-distance-between-three-equal-elements-i
 employee-bonus
 minimum-distance-to-the-target-element
+three-consecutive-odds
