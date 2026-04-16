@@ -39,7 +39,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.4" },
     { name = "rich", specifier = ">=14.1.0" },
     { name = "telegramify-markdown", specifier = ">=0.5.1" },
-    { name = "terraink-py", specifier = ">=0.6.0" },
+    { name = "terraink-py", git = "https://github.com/yihong0618/terraink_py.git?rev=main" },
     { name = "types-requests", specifier = ">=2.32.0" },
     { name = "wcwidth", specifier = ">=0.2.13" },
     { name = "zhconv", specifier = ">=1.4.3" },
@@ -953,15 +953,11 @@ wheels = [
 
 [[package]]
 name = "terraink-py"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.6.1"
+source = { git = "https://github.com/yihong0618/terraink_py.git?rev=main#ae110be71796ef8af5faa00cdfdd68286e811dac" }
 dependencies = [
     { name = "duckdb" },
     { name = "pillow" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8a/45/1be536370333a3331fe0c62805c7c39ce1bd39eafa073151bf7a63c66032/terraink_py-0.6.0.tar.gz", hash = "sha256:520197e2a1f5c4b80907432be68122ac2557c1f4f61778dc9bdd8e6945caacd8", size = 47846, upload-time = "2026-03-15T09:42:17.848Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/15/d6da42edb71c887e208f32c0b5d1f0d9f2697df79b8c49b5f1da7439626b/terraink_py-0.6.0-py3-none-any.whl", hash = "sha256:fe158b7c2cb90ab46b07e786e844cf27175caccefe180060fa0a2df9131f8733", size = 36524, upload-time = "2026-03-15T09:42:14.675Z" },
 ]
 
 [[package]]
