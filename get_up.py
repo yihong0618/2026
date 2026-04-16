@@ -1,8 +1,11 @@
 import argparse
 import random
 import re
+import sqlite3
 import subprocess
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -98,6 +101,12 @@ EARLY_GET_UP_HOURS = range(3, 10)
 
 BIRTH_YEAR = 1989  # change it to your birth year
 
+CITY_GEOCODE_DB = "data/city_geocode_cache.db"
+CITY_MAP_FILE = "cities_map.png"
+_NOMINATIM_LOCK = threading.Lock()
+_LAST_NOMINATIM_REQUEST_AT = 0.0
+_NOMINATIM_MIN_INTERVAL = 1.1
+
 
 @dataclass(frozen=True)
 class LeetCodeProblem:
@@ -122,6 +131,7 @@ class GetUpMessageParts:
     blog_article: str
     city_info: str
     city_poster_path: str
+    city_map_path: str
 
     def as_tuple(self):
         return (
@@ -134,6 +144,7 @@ class GetUpMessageParts:
             self.blog_article,
             self.city_info,
             self.city_poster_path,
+            self.city_map_path,
         )
 
     def render(self, get_up_time):
@@ -448,6 +459,364 @@ def _find_fontconfig_cjk_font():
         ):
             return path
     return fallback
+
+
+def _get_geocode_db_path():
+    return _data_file_path(CITY_GEOCODE_DB)
+
+
+def _init_geocode_cache():
+    db_path = _get_geocode_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS geocache ("
+            "city TEXT PRIMARY KEY, lat REAL, lon REAL"
+            ")"
+        )
+        conn.commit()
+
+
+def _get_cached_geocode(city):
+    try:
+        with sqlite3.connect(str(_get_geocode_db_path())) as conn:
+            row = conn.execute(
+                "SELECT lat, lon FROM geocache WHERE city = ?", (city,)
+            ).fetchone()
+            return (row[0], row[1]) if row else None
+    except Exception:
+        return None
+
+
+def _set_cached_geocode(city, lat, lon):
+    try:
+        _init_geocode_cache()
+        with sqlite3.connect(str(_get_geocode_db_path())) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO geocache VALUES (?, ?, ?)", (city, lat, lon)
+            )
+            conn.commit()
+    except Exception as error:
+        print(f"Error caching geocode: {error}")
+
+
+def _geocode_city(city):
+    city = city.strip()
+    if not city:
+        return None
+    cached = _get_cached_geocode(city)
+    if cached:
+        return cached
+    queries = [f"{city}市, 中国", f"{city}市", city]
+    for query in queries:
+        try:
+            global _LAST_NOMINATIM_REQUEST_AT
+            with _NOMINATIM_LOCK:
+                now = time.monotonic()
+                wait = _NOMINATIM_MIN_INTERVAL - (now - _LAST_NOMINATIM_REQUEST_AT)
+                if wait > 0:
+                    time.sleep(wait)
+                resp = requests.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={
+                        "q": query,
+                        "format": "json",
+                        "limit": "1",
+                        "countrycodes": "cn",
+                    },
+                    headers={
+                        "User-Agent": WIKIMEDIA_USER_AGENT,
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    },
+                    timeout=10,
+                )
+                _LAST_NOMINATIM_REQUEST_AT = time.monotonic()
+            results = resp.json()
+            if results:
+                lat = float(results[0]["lat"])
+                lon = float(results[0]["lon"])
+                _set_cached_geocode(city, lat, lon)
+                return (lat, lon)
+        except Exception:
+            pass
+        time.sleep(1)
+    return None
+
+
+_NATURALEARTH_URL = (
+    "https://naciscdn.org/naturalearth/110m/cultural/" "ne_110m_admin_0_countries.zip"
+)
+_WORLD_CACHE_FILE = _data_file_path("data/ne_110m_countries.gpkg")
+
+
+def _load_world_geodata():
+    try:
+        import geopandas as gpd
+    except ImportError:
+        return None
+    if _WORLD_CACHE_FILE.exists():
+        try:
+            return gpd.read_file(str(_WORLD_CACHE_FILE))
+        except Exception:
+            pass
+    try:
+        world = gpd.read_file(_NATURALEARTH_URL)
+        _WORLD_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        world.to_file(str(_WORLD_CACHE_FILE), driver="GPKG")
+        return world
+    except Exception as error:
+        print(f"Error loading world geodata: {error}")
+        return None
+
+
+def _setup_matplotlib_font():
+    try:
+        import matplotlib
+        from matplotlib.font_manager import FontProperties
+
+        font_path = _resolve_city_poster_font_file()
+        if font_path is None:
+            return None
+        fp = FontProperties(fname=str(font_path))
+        matplotlib.font_manager.fontManager.addfont(str(font_path))
+        matplotlib.rcParams["font.family"] = fp.get_name()
+        matplotlib.rcParams["axes.unicode_minus"] = False
+        return fp
+    except Exception:
+        return None
+
+
+def _generate_cities_map(today_city=""):
+    try:
+        used_cities = _read_non_empty_lines(_data_file_path(CITIES_USED_FILE))
+        if not used_cities:
+            return ""
+        city_coords = []
+        for city in used_cities:
+            coord = _geocode_city(city)
+            if coord:
+                city_coords.append((city, coord[0], coord[1]))
+        if not city_coords:
+            return ""
+        return _render_cities_map(city_coords, today_city=today_city)
+    except Exception as error:
+        print(f"Error generating cities map: {error}")
+        return ""
+
+
+def _rect_overlap_area(a, b):
+    dx = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    dy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    return float(dx * dy)
+
+
+def _compute_label_offsets(lons, lats, labels, ax, fontsize=9):
+    import math
+
+    n = len(lons)
+    if n == 0:
+        return []
+    fig = ax.get_figure()
+    dpi = fig.dpi
+    pts_to_px = dpi / 72.0
+    avg_char_w = fontsize * 0.65 * pts_to_px
+    label_h = fontsize * 1.6 * pts_to_px
+    display_pts = [ax.transData.transform((lon, lat)) for lon, lat in zip(lons, lats)]
+    label_widths = [len(lbl) * avg_char_w + 10 * pts_to_px for lbl in labels]
+    base_angles = [30, 330, 60, 300, 0, 90, 270, 150, 210, 120, 240, 180]
+    candidates = []
+    for dist in (10, 20, 34, 52, 74):
+        for angle_deg in base_angles:
+            rad = math.radians(angle_deg)
+            candidates.append(
+                (round(dist * math.cos(rad), 1), round(dist * math.sin(rad), 1))
+            )
+    dot_radius = 8
+    dot_boxes = [
+        (px - dot_radius, py - dot_radius, px + dot_radius, py + dot_radius)
+        for px, py in display_pts
+    ]
+    offsets = [None] * n
+    placed_boxes = []
+    proximity_threshold = 18 * pts_to_px
+    for i in range(n):
+        px, py = display_pts[i]
+        w = label_widths[i]
+        h = label_h
+        best_offset = candidates[0]
+        best_cost = float("inf")
+        best_box = (0.0, 0.0, 0.0, 0.0)
+        for dx, dy in candidates:
+            dx_px = dx * pts_to_px
+            dy_px = dy * pts_to_px
+            lx = (px + dx_px - w) if dx < 0 else (px + dx_px)
+            ly = py + dy_px
+            box = (lx, ly, lx + w, ly + h)
+            cost = 0.0
+            for pb in placed_boxes:
+                overlap = _rect_overlap_area(box, pb)
+                if overlap > 0:
+                    cost += overlap * 10
+                else:
+                    cx1 = (box[0] + box[2]) * 0.5
+                    cy1 = (box[1] + box[3]) * 0.5
+                    cx2 = (pb[0] + pb[2]) * 0.5
+                    cy2 = (pb[1] + pb[3]) * 0.5
+                    d = math.hypot(cx1 - cx2, cy1 - cy2)
+                    if d < proximity_threshold:
+                        cost += (proximity_threshold - d) * 0.5
+            for j, db in enumerate(dot_boxes):
+                if j != i:
+                    cost += _rect_overlap_area(box, db) * 5
+            cost += math.hypot(dx, dy) * 0.15
+            if cost < best_cost:
+                best_cost = cost
+                best_offset = (dx, dy)
+                best_box = box
+        offsets[i] = (round(best_offset[0]), round(best_offset[1]))
+        placed_boxes.append(best_box)
+    return offsets
+
+
+def _render_cities_map(city_coords, today_city=""):
+    import matplotlib
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.figure import Figure
+
+    matplotlib.use("Agg")
+    _setup_matplotlib_font()
+
+    today_city = today_city.strip()
+
+    other_coords = [c for c in city_coords if c[0] != today_city]
+    today_coords = [c for c in city_coords if c[0] == today_city]
+
+    all_lons = [c[2] for c in city_coords]
+    all_lats = [c[1] for c in city_coords]
+
+    min_lon, max_lon = min(all_lons), max(all_lons)
+    min_lat, max_lat = min(all_lats), max(all_lats)
+    pad_lon = max((max_lon - min_lon) * 0.15, 4)
+    pad_lat = max((max_lat - min_lat) * 0.15, 3)
+    view_min_lon = max(70, min_lon - pad_lon)
+    view_max_lon = min(140, max_lon + pad_lon)
+    view_min_lat = max(15, min_lat - pad_lat)
+    view_max_lat = min(55, max_lat + pad_lat)
+
+    world = _load_world_geodata()
+
+    fig = Figure(figsize=(12, 8), dpi=150)
+    fig.set_facecolor("#F8FAFC")
+    canvas = FigureCanvasAgg(fig)
+    ax = fig.subplots(1, 1)
+    ax.set_facecolor("#DDECF8")
+
+    if world is not None:
+        try:
+            world_clipped = world.cx[
+                view_min_lon:view_max_lon, view_min_lat:view_max_lat
+            ]
+        except Exception:
+            world_clipped = world
+        if getattr(world_clipped, "empty", False):
+            world_clipped = world
+        world_clipped.plot(
+            ax=ax,
+            color="#ECE9E1",
+            edgecolor="#B0B5BB",
+            linewidth=0.6,
+            zorder=1,
+        )
+
+    # Other cities
+    if other_coords:
+        ax.scatter(
+            [c[2] for c in other_coords],
+            [c[1] for c in other_coords],
+            s=80,
+            c="#E76F51",
+            alpha=0.9,
+            edgecolors="#FFFFFF",
+            linewidths=1.5,
+            zorder=3,
+        )
+
+    # Today city
+    if today_coords:
+        ax.scatter(
+            [c[2] for c in today_coords],
+            [c[1] for c in today_coords],
+            s=220,
+            c="#F4A261",
+            alpha=0.95,
+            edgecolors="#264653",
+            linewidths=2.0,
+            zorder=5,
+        )
+
+    lons = [c[2] for c in city_coords]
+    lats = [c[1] for c in city_coords]
+    labels = [c[0] for c in city_coords]
+
+    label_offsets = _compute_label_offsets(lons, lats, labels, ax, fontsize=9)
+    for lon, lat, label, offset in zip(lons, lats, labels, label_offsets):
+        is_today = label == today_city
+        ha = "left" if offset[0] >= 0 else "right"
+        ann = dict(
+            textcoords="offset points",
+            xytext=offset,
+            fontsize=10 if is_today else 9,
+            fontweight="bold",
+            color="#1F2937" if is_today else "#264653",
+            ha=ha,
+            bbox=dict(
+                boxstyle="round,pad=0.35" if is_today else "round,pad=0.3",
+                facecolor="#FEF3C7" if is_today else "white",
+                alpha=0.98 if is_today else 0.95,
+                edgecolor="#F59E0B" if is_today else "#A8B0BA",
+                linewidth=1.2 if is_today else 0.8,
+            ),
+            arrowprops=dict(
+                arrowstyle="-",
+                color="#F59E0B" if is_today else "#B0B5BB",
+                linewidth=0.8 if is_today else 0.5,
+                shrinkA=0,
+                shrinkB=3,
+            ),
+            zorder=6 if is_today else 4,
+        )
+        ax.annotate(label, (lon, lat), **ann)
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlim(view_min_lon, view_max_lon)
+    ax.set_ylim(view_min_lat, view_max_lat)
+    ax.grid(color="#CBD5E1", linestyle="--", linewidth=0.6, alpha=0.55, zorder=0)
+    title = (
+        f"已探索城市地图（{len(city_coords)} 个城市）"
+        if not today_city
+        else f"已探索城市地图（{len(city_coords)} 个城市）· 今日：{today_city}"
+    )
+    ax.set_title(
+        title,
+        fontsize=15,
+        fontweight="bold",
+        pad=12,
+        color="#1F2937",
+    )
+    ax.set_xlabel("经度", fontsize=10, color="#334155")
+    ax.set_ylabel("纬度", fontsize=10, color="#334155")
+    ax.tick_params(labelsize=8, colors="#64748B")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#B8C0CA")
+    ax.spines["bottom"].set_color("#B8C0CA")
+
+    fig.tight_layout(pad=1.0)
+    output_dir = SCRIPT_DIR / CITY_POSTERS_DIR
+    output_dir.mkdir(exist_ok=True)
+    output_path = output_dir / CITY_MAP_FILE
+    canvas.print_png(str(output_path))
+    return str(output_path)
 
 
 def _extract_wiki_url(event):
@@ -842,6 +1211,7 @@ def _build_get_up_message_parts(now=None):
     current_time = now or _now()
     city_info, city_name, _ = get_random_city()
     city_poster_path = _generate_city_poster(city_name) if city_name else ""
+    city_map_path = _generate_cities_map(city_name) if city_name else ""
     return GetUpMessageParts(
         is_get_up_early=_is_get_up_early(current_time),
         day_of_year=get_day_of_year(current_time),
@@ -852,11 +1222,12 @@ def _build_get_up_message_parts(now=None):
         blog_article=get_blog_article_from_history(),
         city_info=city_info,
         city_poster_path=city_poster_path,
+        city_map_path=city_map_path,
     )
 
 
 def _send_telegram_message(
-    body, tele_token, tele_chat_id, poster_path="", city_info=""
+    body, tele_token, tele_chat_id, poster_path="", city_info="", map_path=""
 ):
     if not tele_token or not tele_chat_id:
         return
@@ -865,35 +1236,91 @@ def _send_telegram_message(
     try:
         telegram_body = _build_telegram_body(body)
         poster_file = Path(poster_path) if poster_path else None
+        map_file = Path(map_path) if map_path else None
         has_poster = bool(poster_file and poster_file.exists())
+        has_map = bool(map_file and map_file.exists())
 
-        if has_poster and _can_send_as_single_telegram_photo_post(telegram_body):
-            with poster_file.open("rb") as photo:
-                bot.send_photo(
+        if has_poster and has_map:
+            from telebot.types import InputMediaPhoto
+
+            poster_bytes = poster_file.read_bytes()
+            map_bytes = map_file.read_bytes()
+
+            if _can_send_as_single_telegram_photo_post(telegram_body):
+                media = [
+                    InputMediaPhoto(
+                        poster_bytes,
+                        caption=telegram_body,
+                        parse_mode="MarkdownV2",
+                    ),
+                    InputMediaPhoto(map_bytes),
+                ]
+                bot.send_media_group(
                     tele_chat_id,
-                    photo,
-                    caption=telegram_body,
+                    media,
+                    disable_notification=True,
+                )
+            else:
+                bot.send_message(
+                    tele_chat_id,
+                    telegram_body,
                     parse_mode="MarkdownV2",
                     disable_notification=True,
                 )
-            return
-
-        bot.send_message(
-            tele_chat_id,
-            telegram_body,
-            parse_mode="MarkdownV2",
-            disable_notification=True,
-        )
-        if has_poster:
-            caption = markdownify(city_info).strip() if city_info else None
-            with poster_file.open("rb") as photo:
+                caption = markdownify(city_info).strip() if city_info else None
+                media = [
+                    InputMediaPhoto(
+                        poster_bytes,
+                        caption=caption,
+                        parse_mode="MarkdownV2" if caption else None,
+                    ),
+                    InputMediaPhoto(map_bytes),
+                ]
+                bot.send_media_group(
+                    tele_chat_id,
+                    media,
+                    disable_notification=True,
+                )
+        elif has_poster:
+            if _can_send_as_single_telegram_photo_post(telegram_body):
+                with poster_file.open("rb") as photo:
+                    bot.send_photo(
+                        tele_chat_id,
+                        photo,
+                        caption=telegram_body,
+                        parse_mode="MarkdownV2",
+                        disable_notification=True,
+                    )
+            else:
+                bot.send_message(
+                    tele_chat_id,
+                    telegram_body,
+                    parse_mode="MarkdownV2",
+                    disable_notification=True,
+                )
+                caption = markdownify(city_info).strip() if city_info else None
+                with poster_file.open("rb") as photo:
+                    bot.send_photo(
+                        tele_chat_id,
+                        photo,
+                        caption=caption or None,
+                        parse_mode="MarkdownV2" if caption else None,
+                        disable_notification=True,
+                    )
+        elif has_map:
+            with map_file.open("rb") as photo:
                 bot.send_photo(
                     tele_chat_id,
                     photo,
-                    caption=caption or None,
-                    parse_mode="MarkdownV2" if caption else None,
                     disable_notification=True,
                 )
+        else:
+            bot.send_message(
+                tele_chat_id,
+                telegram_body,
+                parse_mode="MarkdownV2",
+                disable_notification=True,
+            )
     except Exception as error:
         print(str(error))
 
@@ -939,6 +1366,7 @@ def main(
         tele_chat_id,
         message_parts.city_poster_path,
         message_parts.city_info,
+        message_parts.city_map_path,
     )
     issue.create_comment(body)
 

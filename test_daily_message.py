@@ -23,12 +23,15 @@ STATE_FILES = [
     get_up.BLOG_SITES_USED_FILE,
     get_up.CHINESE_CITIES_FILE,
     get_up.CITIES_USED_FILE,
+    get_up.CITY_GEOCODE_DB,
 ]
+WORLD_CACHE_FILE = get_up._WORLD_CACHE_FILE
 
 
 @contextmanager
 def isolated_state_files():
     original_script_dir = get_up.SCRIPT_DIR
+    original_world_cache = get_up._WORLD_CACHE_FILE
 
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_dir = Path(tmpdir)
@@ -43,10 +46,12 @@ def isolated_state_files():
                 target.touch()
 
         get_up.SCRIPT_DIR = temp_dir
+        get_up._WORLD_CACHE_FILE = temp_dir / "data/ne_110m_countries.gpkg"
         try:
             yield
         finally:
             get_up.SCRIPT_DIR = original_script_dir
+            get_up._WORLD_CACHE_FILE = original_world_cache
 
 
 def run_component(label, func):
@@ -87,10 +92,15 @@ def main():
         city_info = city_info_result[0] if city_info_result else ""
         city_name = city_info_result[1] if city_info_result else ""
         poster_path = ""
+        map_path = ""
         if city_name:
             poster_path = run_component(
                 "城市海报",
                 lambda: get_up._generate_city_poster(city_name),
+            )
+            map_path = run_component(
+                "城市地图",
+                lambda: get_up._generate_cities_map(city_name),
             )
 
         get_up_time = now.to_datetime_string()
@@ -114,6 +124,8 @@ def main():
     print(f"是否早起: {'是' if is_get_up_early else '否'}", flush=True)
     if poster_path:
         print(f"城市海报: {poster_path}", flush=True)
+    if map_path:
+        print(f"城市地图: {map_path}", flush=True)
     print("=" * 60, flush=True)
 
 

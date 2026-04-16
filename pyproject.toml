@@ -17,6 +17,8 @@ dependencies = [
     "wcwidth>=0.2.13",
     "zhconv>=1.4.3",
     "terraink-py @ git+https://github.com/yihong0618/terraink_py.git@main",
+    "geopandas>=1.0.0",
+    "matplotlib>=3.9.0",
 ]
 
 [tool.mypy]

@@ -10,3 +10,5 @@ wcwidth
 duckdb
 zhconv
 terraink-py
+geopandas
+matplotlib
