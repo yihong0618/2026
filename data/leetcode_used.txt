@@ -67,3 +67,4 @@ employee-bonus
 minimum-distance-to-the-target-element
 three-consecutive-odds
 shortest-distance-to-target-string-in-a-circular-array
+check-if-numbers-are-ascending-in-a-sentence
