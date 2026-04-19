@@ -70,3 +70,4 @@ shortest-distance-to-target-string-in-a-circular-array
 check-if-numbers-are-ascending-in-a-sentence
 mirror-distance-of-an-integer
 rearrange-spaces-between-words
+two-furthest-houses-with-different-colors
