@@ -103,6 +103,8 @@ BIRTH_YEAR = 1989  # change it to your birth year
 
 CITY_GEOCODE_DB = "data/city_geocode_cache.db"
 CITY_MAP_FILE = "cities_map.png"
+CITY_POSTER_MAX_ATTEMPTS = 3
+CITY_POSTER_RETRY_DELAY_SECONDS = 2
 _NOMINATIM_LOCK = threading.Lock()
 _LAST_NOMINATIM_REQUEST_AT = 0.0
 _NOMINATIM_MIN_INTERVAL = 1.1
@@ -391,26 +393,37 @@ def get_random_city():
 def _generate_city_poster(city_name):
     if not city_name:
         return ""
-    try:
-        output_path = _city_poster_output_path(city_name)
-        font_file = _resolve_city_poster_font_file()
+    output_path = _city_poster_output_path(city_name)
+    if output_path.exists():
+        return str(output_path)
+    font_file = _resolve_city_poster_font_file()
 
-        request = PosterRequest(
-            output=output_path,
-            formats=("png",),
-            location=city_name,
-            language="zh",
-            distance_m=8000.0,
-            dpi=150,
-            theme="random",
-            font_file=font_file,
-            cache_dir=SCRIPT_DIR / ".terraink-cache",
-        )
-        result = generate_poster(request)
-        if result.files:
-            return str(result.files[0])
-    except Exception as error:
-        print(f"Error generating city poster: {error}")
+    request = PosterRequest(
+        output=output_path,
+        formats=("png",),
+        location=city_name,
+        language="zh",
+        distance_m=8000.0,
+        dpi=150,
+        theme="random",
+        font_file=font_file,
+        cache_dir=SCRIPT_DIR / ".terraink-cache",
+    )
+
+    for attempt in range(1, CITY_POSTER_MAX_ATTEMPTS + 1):
+        try:
+            result = generate_poster(request)
+            if result.files:
+                return str(result.files[0])
+        except Exception as error:
+            print(
+                f"Error generating city poster (attempt "
+                f"{attempt}/{CITY_POSTER_MAX_ATTEMPTS}): {error}"
+            )
+            if output_path.exists():
+                return str(output_path)
+            if attempt < CITY_POSTER_MAX_ATTEMPTS:
+                time.sleep(CITY_POSTER_RETRY_DELAY_SECONDS * attempt)
     return ""
 
 
@@ -1308,10 +1321,23 @@ def _send_telegram_message(
                         disable_notification=True,
                     )
         elif has_map:
+            if _can_send_as_single_telegram_photo_post(telegram_body):
+                caption = telegram_body
+            else:
+                bot.send_message(
+                    tele_chat_id,
+                    telegram_body,
+                    parse_mode="MarkdownV2",
+                    disable_notification=True,
+                )
+                caption = markdownify(city_info).strip() if city_info else None
+
             with map_file.open("rb") as photo:
                 bot.send_photo(
                     tele_chat_id,
                     photo,
+                    caption=caption or None,
+                    parse_mode="MarkdownV2" if caption else None,
                     disable_notification=True,
                 )
         else:
