@@ -71,3 +71,4 @@ check-if-numbers-are-ascending-in-a-sentence
 mirror-distance-of-an-integer
 rearrange-spaces-between-words
 two-furthest-houses-with-different-colors
+er-jin-zhi-zhong-1de-ge-shu-lcof
