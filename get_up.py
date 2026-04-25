@@ -398,14 +398,24 @@ def _generate_city_poster(city_name):
         return str(output_path)
     font_file = _resolve_city_poster_font_file()
 
+    coord = _geocode_city(city_name)
+    if coord is None:
+        lat, lon = None, None
+        location = city_name
+    else:
+        lat, lon = coord
+        location = None
+
     request = PosterRequest(
         output=output_path,
         formats=("png",),
-        location=city_name,
+        location=location,
         language="zh",
         distance_m=8000.0,
         dpi=150,
         theme="random",
+        lat=lat,
+        lon=lon,
         font_file=font_file,
         cache_dir=SCRIPT_DIR / ".terraink-cache",
     )
@@ -557,7 +567,7 @@ def _geocode_city(city):
 
 
 _NATURALEARTH_URL = (
-    "https://naciscdn.org/naturalearth/110m/cultural/" "ne_110m_admin_0_countries.zip"
+    "https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip"
 )
 _WORLD_CACHE_FILE = _data_file_path("data/ne_110m_countries.gpkg")
 
