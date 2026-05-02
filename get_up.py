@@ -84,6 +84,12 @@ CITY_RANDOM_SALT = 77
 
 TIMEZONE = "Asia/Shanghai"
 SCRIPT_DIR = Path(__file__).resolve().parent
+LOCAL_CJK_FONT_FILE_CANDIDATES = (
+    "fonts/AlibabaPuHuiTi-Regular.ttf",
+    "fonts/AlibabaPuHuiTi-Bold.ttf",
+    "fonts/ZenMaruGothic-Regular.ttf",
+    "fonts/ZenMaruGothic-Bold.ttf",
+)
 
 LEETCODE_BASE_URL = "https://leetcode.cn/problems/{slug}/"
 LEETCODE_DAILY_URL = "https://leetcode.cn/graphql/"
@@ -444,6 +450,11 @@ def _city_poster_output_path(city_name):
 
 
 def _resolve_city_poster_font_file():
+    for candidate in LOCAL_CJK_FONT_FILE_CANDIDATES:
+        path = SCRIPT_DIR / candidate
+        if path.exists():
+            return path
+
     font_file = _find_fontconfig_cjk_font()
     if font_file is not None:
         return font_file

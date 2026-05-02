@@ -83,6 +83,28 @@ class GetUpTelegramTests(unittest.TestCase):
 
 
 class GetUpPosterTests(unittest.TestCase):
+    def test_resolve_city_poster_font_prefers_local_fonts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            original_local_candidates = get_up.LOCAL_CJK_FONT_FILE_CANDIDATES
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            get_up.LOCAL_CJK_FONT_FILE_CANDIDATES = ("fonts/local-cn.ttf",)
+            try:
+                font_path = Path(tmpdir) / "fonts" / "local-cn.ttf"
+                font_path.parent.mkdir()
+                font_path.write_bytes(b"font")
+
+                with mock.patch.object(
+                    get_up, "_find_fontconfig_cjk_font"
+                ) as find_font:
+                    result = get_up._resolve_city_poster_font_file()
+
+                self.assertEqual(result, font_path)
+                find_font.assert_not_called()
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+                get_up.LOCAL_CJK_FONT_FILE_CANDIDATES = original_local_candidates
+
     def test_generate_city_poster_reuses_cached_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             original_script_dir = get_up.SCRIPT_DIR

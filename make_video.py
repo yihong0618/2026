@@ -12,6 +12,12 @@ warnings.filterwarnings("ignore")
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 POSTER_DIR = os.path.join(PROJECT_ROOT, "city_posters")
+LOCAL_CJK_FONT_FILE_CANDIDATES = (
+    os.path.join(PROJECT_ROOT, "fonts", "AlibabaPuHuiTi-Regular.ttf"),
+    os.path.join(PROJECT_ROOT, "fonts", "AlibabaPuHuiTi-Bold.ttf"),
+    os.path.join(PROJECT_ROOT, "fonts", "ZenMaruGothic-Regular.ttf"),
+    os.path.join(PROJECT_ROOT, "fonts", "ZenMaruGothic-Bold.ttf"),
+)
 os.chdir(POSTER_DIR)
 
 # ── Poster images ──────────────────────────────────────────────────────────
@@ -210,6 +216,14 @@ def _setup_matplotlib_font():
     try:
         import matplotlib
         from matplotlib.font_manager import FontProperties
+
+        for path in LOCAL_CJK_FONT_FILE_CANDIDATES:
+            if os.path.exists(path):
+                fp = FontProperties(fname=path)
+                matplotlib.font_manager.fontManager.addfont(path)
+                matplotlib.rcParams["font.family"] = fp.get_name()
+                matplotlib.rcParams["axes.unicode_minus"] = False
+                return
 
         result = subprocess.run(
             ["fc-list", ":lang=zh", "-f", "%{file}\n"],
