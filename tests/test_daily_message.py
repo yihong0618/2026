@@ -1,9 +1,7 @@
-#!/usr/bin/env python3
 """在线 smoke test：真实请求外部服务，但隔离本地状态文件。"""
 
 import os
 import shutil
-import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -11,9 +9,7 @@ from pathlib import Path
 
 import pendulum
 
-sys.path.insert(0, os.path.dirname(__file__))
-import get_up
-
+from y2026 import get_up
 
 STATE_FILES = [
     get_up.LEETCODE_EASY_FILE,

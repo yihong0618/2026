@@ -1,28 +1,50 @@
 [project]
-name = "2026"
+name = "y2026"
 version = "0.1.0"
-description = "Add your description here"
+description = "Daily automation for the 2026 repository"
 requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.3.2",
-    "kling-creator>=0.5.0",
-    "openai>=1.98.0",
+    "geopandas>=1.0.0",
+    "matplotlib>=3.9.0",
+    "numpy>=2.0.0",
     "pendulum>=3.1.0",
+    "pillow>=10.0.0",
     "pygithub>=2.7.0",
     "pytelegrambotapi>=4.28.0",
     "requests>=2.32.4",
-    "rich>=14.1.0",
     "telegramify-markdown>=0.5.1",
-    "types-requests>=2.32.0",
-    "wcwidth>=0.2.13",
-    "zhconv>=1.4.3",
     "terraink-py @ git+https://github.com/yihong0618/terraink_py.git@main",
-    "geopandas>=1.0.0",
-    "matplotlib>=3.9.0",
+    "zhconv>=1.4.3",
 ]
 
+[project.scripts]
+get-up = "y2026.get_up:cli"
+make-city-video = "y2026.make_video:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/y2026"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.mypy]
+files = ["src/y2026", "tests"]
 ignore_missing_imports = true
 
 [dependency-groups]
-dev = ["mypy>=1.0.0", "types-requests>=2.32.0"]
+dev = [
+    "black>=25.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=4.0.0",
+    "pytest>=8.0.0",
+    "ruff>=0.14.0",
+    "types-requests>=2.32.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

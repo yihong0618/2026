@@ -57,8 +57,9 @@ CITY_WIKI_BASE_URL = "https://zh.wikipedia.org/wiki/{city}"
 CITY_RANDOM_SALT = 77
 
 TIMEZONE = "Asia/Shanghai"
-MODULE_DIR = Path(__file__).resolve().parent
-SCRIPT_DIR = MODULE_DIR
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MODULE_DIR = PROJECT_ROOT
+SCRIPT_DIR = PROJECT_ROOT
 LOCAL_CJK_FONT_FILE_CANDIDATES = (
     "fonts/AlibabaPuHuiTi-Regular.ttf",
     "fonts/AlibabaPuHuiTi-Bold.ttf",
@@ -1636,13 +1637,10 @@ def main(
     issue.create_comment(body)
 
 
-if __name__ == "__main__":
+def cli(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("github_token", help="github_token")
     parser.add_argument("repo_name", help="repo_name")
-    parser.add_argument(
-        "--weather_message", help="weather_message", nargs="?", default="", const=""
-    )
     parser.add_argument(
         "--tele_token", help="tele_token", nargs="?", default="", const=""
     )
@@ -1656,3 +1654,7 @@ if __name__ == "__main__":
         options.tele_token,
         options.tele_chat_id,
     )
+
+
+if __name__ == "__main__":
+    cli()

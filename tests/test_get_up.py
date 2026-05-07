@@ -5,7 +5,7 @@ from unittest import mock
 
 import pendulum
 
-import get_up
+from y2026 import get_up
 
 
 class FakeBot:

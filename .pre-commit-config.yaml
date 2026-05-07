@@ -41,8 +41,8 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: uv run --python .venv/bin/python mypy --no-incremental
+        entry: uv run mypy --no-incremental
         language: system
         types: [python]
         pass_filenames: false
-        args: ["."]
+        args: ["src", "tests"]
