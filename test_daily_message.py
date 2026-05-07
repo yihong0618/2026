@@ -21,6 +21,7 @@ STATE_FILES = [
     get_up.LEETCODE_HOT100_FILE,
     get_up.LEETCODE_HOT100_USED_FILE,
     get_up.BLOG_SITES_USED_FILE,
+    get_up.HACKER_NEWS_USED_FILE,
     get_up.CHINESE_CITIES_FILE,
     get_up.CITIES_USED_FILE,
     get_up.CITY_GEOCODE_DB,
@@ -83,11 +84,15 @@ def main():
         day_of_year = run_component("今年的第几天", get_up.get_day_of_year)
         year_progress = run_component("年度进度", get_up.get_year_progress)
         running_info = run_component("跑步信息", get_up.get_running_distance)
-        history_today = run_component("历史上的今天", get_up.get_history_today)
-        leetcode = run_component("今日 LeetCode", get_up.get_daily_leetcode)
         blog_article = run_component(
             "历史上的今天博客", get_up.get_blog_article_from_history
         )
+        blog_year = get_up._extract_blog_year_from_text(blog_article)
+        history_today = run_component(
+            "HN 历史今日",
+            lambda: get_up.get_hacker_news_history(blog_year),
+        )
+        leetcode = run_component("今日 LeetCode", get_up.get_daily_leetcode)
         city_info_result = run_component("今日城市", get_up.get_random_city)
         city_info = city_info_result[0] if city_info_result else ""
         city_name = city_info_result[1] if city_info_result else ""

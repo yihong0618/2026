@@ -1,4 +1,5 @@
 import argparse
+import html
 import random
 import re
 import sqlite3
@@ -76,6 +77,7 @@ LEETCODE_USED_FILE = "data/leetcode_used.txt"
 LEETCODE_HOT100_FILE = "data/leetcode_hot100.txt"
 LEETCODE_HOT100_USED_FILE = "data/leetcode_hot100_used.txt"
 BLOG_SITES_USED_FILE = "data/blog_sites_used.txt"
+HACKER_NEWS_USED_FILE = "data/hacker_news_used.txt"
 CHINESE_CITIES_FILE = "data/chinese_cities.txt"
 CITIES_USED_FILE = "data/cities_used.txt"
 
@@ -97,12 +99,18 @@ RUN_DATA_URL = (
     "https://github.com/yihong0618/run/raw/refs/heads/master/run_page/data.parquet"
 )
 WIKIMEDIA_USER_AGENT = "GetUpBot/1.0 (https://github.com/yihong0618/2026)"
+HACKER_NEWS_SEARCH_URL = "https://hn.algolia.com/api/v1/search_by_date"
+HACKER_NEWS_ITEM_URL = "https://news.ycombinator.com/item?id={object_id}"
+HACKER_NEWS_START_YEAR = 2007
+HACKER_NEWS_STORIES_PER_PAGE = 1000
+HACKER_NEWS_TOP_LIMIT = 10
 BLOG_HISTORY_START_YEAR = 2005
 BLOG_HISTORY_END_YEAR = 2025
 BLOG_RANDOM_SEARCH_ATTEMPTS = 5
 BLOG_LINK_CHECK_ATTEMPTS = 10
 HOT100_RANDOM_SALT = 42
 BLOG_RANDOM_SALT = 99
+HACKER_NEWS_RANDOM_SALT = 123
 EARLY_GET_UP_HOURS = range(3, 10)
 
 BIRTH_YEAR = 1989  # change it to your birth year
@@ -126,6 +134,29 @@ class LeetCodeProblem:
     @property
     def url(self):
         return LEETCODE_BASE_URL.format(slug=self.slug)
+
+
+@dataclass(frozen=True)
+class HackerNewsStory:
+    object_id: str
+    title: str
+    url: str
+    points: int
+    num_comments: int
+    author: str
+    created_at: str
+
+    @property
+    def hn_url(self):
+        return HACKER_NEWS_ITEM_URL.format(object_id=self.object_id)
+
+    @property
+    def link_url(self):
+        return self.url or self.hn_url
+
+    @property
+    def key(self):
+        return f"hn:{self.object_id}"
 
 
 @dataclass(frozen=True)
@@ -873,6 +904,179 @@ def _render_cities_map(city_coords, today_city=""):
     return str(output_path)
 
 
+def _clean_hn_text(value, max_length=None):
+    if not value:
+        return ""
+
+    text = html.unescape(str(value))
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"[*`_~]", "", text)
+    text = " ".join(text.split())
+    if max_length is None or len(text) <= max_length:
+        return text
+
+    truncated = text[:max_length]
+    for punct in ["。", "？", "！", ". ", "? ", "! "]:
+        last_pos = truncated.rfind(punct)
+        if last_pos > max_length * 0.45:
+            return text[: last_pos + len(punct)].strip()
+    return truncated.rstrip() + "..."
+
+
+def _load_used_hacker_news():
+    return set(_read_non_empty_lines(_data_file_path(HACKER_NEWS_USED_FILE)))
+
+
+def _save_used_hacker_news(key):
+    if key:
+        _append_line(_data_file_path(HACKER_NEWS_USED_FILE), key)
+
+
+def _parse_hn_int(value):
+    try:
+        if value is None:
+            return 0
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _hn_story_from_hit(hit):
+    object_id = str(hit.get("objectID") or hit.get("id") or "").strip()
+    title = _clean_hn_text(hit.get("title") or hit.get("story_title") or "", 260)
+    if not object_id or not title:
+        return None
+
+    return HackerNewsStory(
+        object_id=object_id,
+        title=title,
+        url=(hit.get("url") or "").strip(),
+        points=_parse_hn_int(hit.get("points")),
+        num_comments=_parse_hn_int(hit.get("num_comments")),
+        author=_clean_hn_text(hit.get("author", ""), 80),
+        created_at=hit.get("created_at", ""),
+    )
+
+
+def _valid_hn_date(year, month, day):
+    try:
+        pendulum.datetime(year, month, day, tz="UTC")
+        return True
+    except ValueError:
+        return False
+
+
+def _hn_day_timestamps(year, month, day):
+    start = pendulum.datetime(year, month, day, tz="UTC")
+    end = start.add(days=1)
+    return int(start.timestamp()), int(end.timestamp())
+
+
+def _hacker_news_candidate_years(now):
+    month = now.month
+    day = now.day
+    years = [
+        year
+        for year in range(HACKER_NEWS_START_YEAR, now.year)
+        if _valid_hn_date(year, month, day)
+    ]
+    rng = _daily_rng(now, HACKER_NEWS_RANDOM_SALT)
+    rng.shuffle(years)
+    return years
+
+
+def _fetch_hacker_news_top_stories_for_date(year, month, day):
+    start_ts, end_ts = _hn_day_timestamps(year, month, day)
+    response = requests.get(
+        HACKER_NEWS_SEARCH_URL,
+        params={
+            "tags": "story",
+            "hitsPerPage": str(HACKER_NEWS_STORIES_PER_PAGE),
+            "numericFilters": f"created_at_i>={start_ts},created_at_i<{end_ts}",
+        },
+        timeout=10,
+    )
+    if not response.ok:
+        return []
+
+    stories = []
+    seen_ids = set()
+    for hit in response.json().get("hits", []):
+        story = _hn_story_from_hit(hit)
+        if story is None or story.object_id in seen_ids:
+            continue
+        seen_ids.add(story.object_id)
+        stories.append(story)
+
+    stories.sort(key=lambda story: (story.points, story.num_comments), reverse=True)
+    return stories[:HACKER_NEWS_TOP_LIMIT]
+
+
+def _is_hacker_news_story_link_available(story):
+    return _check_link_available(story.link_url)
+
+
+def _select_hacker_news_history_story(now, used_keys, target_year=None):
+    rng = _daily_rng(now, HACKER_NEWS_RANDOM_SALT)
+
+    if target_year is None:
+        years = _hacker_news_candidate_years(now)
+    elif HACKER_NEWS_START_YEAR <= target_year < now.year and _valid_hn_date(
+        target_year, now.month, now.day
+    ):
+        years = [target_year]
+    else:
+        years = []
+
+    for year in years:
+        stories = _fetch_hacker_news_top_stories_for_date(year, now.month, now.day)
+        available = [story for story in stories if story.key not in used_keys]
+        rng.shuffle(available)
+        for story in available:
+            if _is_hacker_news_story_link_available(story):
+                return year, story
+            print(f"Skip unavailable HN story link: {story.link_url}")
+    return None, None
+
+
+def _format_hacker_news_history_story(year, month, day, story):
+    date = f"{year}-{month:02d}-{day:02d}"
+    title = _clean_hn_text(story.title, 260)
+    lines = [
+        f"HN 历史今日（{date}）：",
+        "",
+        f"• {title}",
+    ]
+
+    meta_parts = [f"{story.points} points", f"{story.num_comments} comments"]
+    if story.author:
+        meta_parts.append(f"by {story.author}")
+    lines.append(" / ".join(meta_parts))
+    lines.append(f"原文：[{title}]({story.link_url})")
+    lines.append(f"HN 讨论：[{story.object_id}]({story.hn_url})")
+    return "\n".join(lines)
+
+
+def get_hacker_news_history(target_year=None):
+    try:
+        now = _now()
+        used_keys = _load_used_hacker_news()
+        year, story = _select_hacker_news_history_story(
+            now,
+            used_keys,
+            target_year=target_year,
+        )
+        if story is None:
+            return ""
+
+        _save_used_hacker_news(story.key)
+        return _format_hacker_news_history_story(year, now.month, now.day, story)
+    except Exception as error:
+        print(f"Error getting Hacker News history: {error}")
+        return ""
+
+
 def _extract_wiki_url(event):
     pages = event.get("pages") or []
     if not pages:
@@ -966,9 +1170,28 @@ def _check_link_available(url, timeout=10):
     if not url:
         return False
 
+    headers = {"User-Agent": WIKIMEDIA_USER_AGENT}
     try:
-        response = requests.head(url, timeout=timeout, allow_redirects=True)
-        return 200 <= response.status_code < 300
+        response = requests.head(
+            url,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=True,
+        )
+        if 200 <= response.status_code < 400:
+            return True
+        if response.status_code not in {403, 405, 406, 429, 500, 501}:
+            return False
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=timeout,
+            allow_redirects=True,
+            stream=True,
+        )
+        response.close()
+        return 200 <= response.status_code < 400
     except requests.exceptions.RequestException:
         return False
 
@@ -1107,6 +1330,17 @@ def _get_years_ago(article_date, current_year):
         return None
 
 
+def _get_article_year(selected):
+    article_date = _get_article_date(selected)
+    if not article_date:
+        return None
+
+    try:
+        return int(article_date.split("-")[0])
+    except (ValueError, IndexError):
+        return None
+
+
 def _format_blog_article(selected, current_year):
     title = selected.get("title", "未知标题")
     link = selected.get("link", "")
@@ -1126,6 +1360,39 @@ def _format_blog_article(selected, current_year):
     return "\n".join(lines)
 
 
+def _select_blog_article_from_history(now):
+    used_sites = _load_used_sites()
+    all_articles = _collect_today_articles(now.month, now.day)
+
+    if not all_articles:
+        print("No articles found for today, trying random date...")
+        all_articles = _collect_random_articles(now)
+    if not all_articles:
+        return None, used_sites
+
+    return _select_blog_article(all_articles, used_sites, now), used_sites
+
+
+def _get_blog_article_from_history_parts(now=None):
+    try:
+        current_time = now or _now()
+        selected, used_sites = _select_blog_article_from_history(current_time)
+        if not selected:
+            return "", None
+
+        domain = selected.get("domain", "")
+        if domain and domain not in used_sites:
+            _save_used_site(domain)
+
+        return (
+            _format_blog_article(selected, current_time.year),
+            _get_article_year(selected),
+        )
+    except Exception as error:
+        print(f"Error getting blog article: {error}")
+        return "", None
+
+
 def get_blog_article_from_history():
     """
     获取历史上今天的博客文章 (2005-2025年)
@@ -1134,29 +1401,19 @@ def get_blog_article_from_history():
     会记录已使用的网站域名，尽量返回不同网站的文章
     如果当天没有文章，则随机搜索其他日期
     """
+    article, _article_year = _get_blog_article_from_history_parts()
+    return article
+
+
+def _extract_blog_year_from_text(blog_article):
+    match = re.search(r"\((\d{4})-\d{2}-\d{2}\)", blog_article)
+    if not match:
+        return None
+
     try:
-        now = _now()
-        used_sites = _load_used_sites()
-        all_articles = _collect_today_articles(now.month, now.day)
-
-        if not all_articles:
-            print("No articles found for today, trying random date...")
-            all_articles = _collect_random_articles(now)
-        if not all_articles:
-            return ""
-
-        selected = _select_blog_article(all_articles, used_sites, now)
-        if not selected:
-            return ""
-
-        domain = selected.get("domain", "")
-        if domain and domain not in used_sites:
-            _save_used_site(domain)
-
-        return _format_blog_article(selected, now.year)
-    except Exception as error:
-        print(f"Error getting blog article: {error}")
-        return ""
+        return int(match.group(1))
+    except ValueError:
+        return None
 
 
 def _query_running_summary(conn, parquet_path, where_clause):
@@ -1266,14 +1523,15 @@ def _build_get_up_message_parts(now=None):
     city_info, city_name, _ = get_random_city()
     city_poster_path = _generate_city_poster(city_name) if city_name else ""
     city_map_path = _generate_cities_map(city_name) if city_name else ""
+    blog_article, blog_year = _get_blog_article_from_history_parts(current_time)
     return GetUpMessageParts(
         is_get_up_early=_is_get_up_early(current_time),
         day_of_year=get_day_of_year(current_time),
         year_progress=get_year_progress(current_time),
         running_info=get_running_distance(),
-        history_today=get_history_today(),
+        history_today=get_hacker_news_history(blog_year),
         leetcode=get_daily_leetcode(),
-        blog_article=get_blog_article_from_history(),
+        blog_article=blog_article,
         city_info=city_info,
         city_poster_path=city_poster_path,
         city_map_path=city_map_path,
