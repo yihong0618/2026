@@ -359,6 +359,24 @@ def _format_city_post_label(city_name, province_name):
     return city_name
 
 
+def _get_city_province_name(city_name):
+    city_name = city_name.strip()
+    if not city_name:
+        return ""
+    for line in _read_non_empty_lines(_data_file_path(CHINESE_CITIES_FILE)):
+        name, _wiki_title, province_name = _parse_city_line(line)
+        if name == city_name:
+            return province_name
+    return ""
+
+
+def _format_city_poster_subtitle(city_name):
+    province_name = _get_city_province_name(city_name)
+    if province_name:
+        return f"{province_name}, 中国"
+    return "中国"
+
+
 def get_random_city():
     try:
         now = _now()
@@ -417,6 +435,8 @@ def _generate_city_poster(city_name):
         formats=("png",),
         location=location,
         language="zh",
+        title=city_name,
+        subtitle=_format_city_poster_subtitle(city_name),
         distance_m=8000.0,
         dpi=150,
         theme="random",

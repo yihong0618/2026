@@ -141,6 +141,9 @@ class GetUpPosterTests(unittest.TestCase):
                             result_obj,
                         ],
                     ) as generate_poster,
+                    mock.patch.object(
+                        get_up, "_geocode_city", return_value=(34.2044, 117.2841)
+                    ),
                     mock.patch.object(get_up.time, "sleep") as sleep,
                 ):
                     result = get_up._generate_city_poster("徐州")
@@ -148,6 +151,41 @@ class GetUpPosterTests(unittest.TestCase):
                 self.assertEqual(result, str(poster_path))
                 self.assertEqual(generate_poster.call_count, 3)
                 sleep.assert_has_calls([mock.call(2), mock.call(4)])
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_generate_city_poster_uses_city_name_as_title(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                data_dir = Path(tmpdir) / "data"
+                data_dir.mkdir()
+                (data_dir / "chinese_cities.txt").write_text(
+                    "榆林|榆林市|陕西省\n", encoding="utf-8"
+                )
+                poster_path = get_up._city_poster_output_path("榆林")
+
+                result_obj = mock.Mock()
+                result_obj.files = [poster_path]
+
+                with (
+                    mock.patch.object(
+                        get_up, "_geocode_city", return_value=(38.2851, 109.7290)
+                    ),
+                    mock.patch.object(
+                        get_up, "generate_poster", return_value=result_obj
+                    ) as generate_poster,
+                ):
+                    result = get_up._generate_city_poster("榆林")
+
+                request = generate_poster.call_args.args[0]
+                self.assertEqual(result, str(poster_path))
+                self.assertEqual(request.title, "榆林")
+                self.assertEqual(request.subtitle, "陕西省, 中国")
+                self.assertEqual(request.lat, 38.2851)
+                self.assertEqual(request.lon, 109.7290)
+                self.assertIsNone(request.location)
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
 
