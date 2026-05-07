@@ -96,15 +96,34 @@ class GetUpPosterTests(unittest.TestCase):
                 font_path.parent.mkdir()
                 font_path.write_bytes(b"font")
 
-                with mock.patch.object(
-                    get_up, "_find_fontconfig_cjk_font"
-                ) as find_font:
-                    result = get_up._resolve_city_poster_font_file()
+                result = get_up._resolve_city_poster_font_file()
 
                 self.assertEqual(result, font_path)
-                find_font.assert_not_called()
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
+                get_up.LOCAL_CJK_FONT_FILE_CANDIDATES = original_local_candidates
+
+    def test_resolve_city_poster_font_uses_module_fonts_with_isolated_script_dir(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            original_module_dir = get_up.MODULE_DIR
+            original_local_candidates = get_up.LOCAL_CJK_FONT_FILE_CANDIDATES
+            isolated_dir = Path(tmpdir) / "isolated"
+            module_dir = Path(tmpdir) / "module"
+            get_up.SCRIPT_DIR = isolated_dir
+            get_up.MODULE_DIR = module_dir
+            get_up.LOCAL_CJK_FONT_FILE_CANDIDATES = ("fonts/module-cn.ttf",)
+            try:
+                font_path = module_dir / "fonts" / "module-cn.ttf"
+                font_path.parent.mkdir(parents=True)
+                font_path.write_bytes(b"font")
+
+                result = get_up._resolve_city_poster_font_file()
+
+                self.assertEqual(result, font_path)
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+                get_up.MODULE_DIR = original_module_dir
                 get_up.LOCAL_CJK_FONT_FILE_CANDIDATES = original_local_candidates
 
     def test_generate_city_poster_reuses_cached_file(self):

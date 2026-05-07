@@ -3,7 +3,6 @@ import html
 import random
 import re
 import sqlite3
-import subprocess
 import tempfile
 import threading
 import time
@@ -44,33 +43,6 @@ GET_UP_MESSAGE_TEMPLATE = """今天的起床时间是--{get_up_time}。
 TG_MORNING_TAG = "#morning"
 TELEGRAM_CAPTION_LIMIT = 1024
 CITY_POSTERS_DIR = "city_posters"
-CJK_FONT_FAMILY_KEYWORDS = (
-    "Noto Sans CJK",
-    "Noto Sans SC",
-    "Noto Serif CJK",
-    "Source Han Sans",
-    "Source Han Serif",
-    "WenQuanYi",
-    "Arial Unicode",
-    "Hiragino Sans GB",
-    "Heiti SC",
-    "Songti SC",
-)
-CJK_FONT_FILE_CANDIDATES = (
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSansSC-Regular.otf",
-    "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
-    "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
-    "/usr/share/fonts/opentype/noto/NotoSerifCJKsc-Regular.otf",
-    "/usr/share/fonts/truetype/noto/NotoSansCJKsc-Regular.otf",
-    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
-    "/System/Library/Fonts/Hiragino Sans GB.ttc",
-    "/System/Library/Fonts/STHeiti Light.ttc",
-    "/System/Library/Fonts/STHeiti Medium.ttc",
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-    "/Library/Fonts/Arial Unicode.ttf",
-)
 
 LEETCODE_EASY_FILE = "data/leetcode_easy.txt"
 LEETCODE_USED_FILE = "data/leetcode_used.txt"
@@ -85,7 +57,8 @@ CITY_WIKI_BASE_URL = "https://zh.wikipedia.org/wiki/{city}"
 CITY_RANDOM_SALT = 77
 
 TIMEZONE = "Asia/Shanghai"
-SCRIPT_DIR = Path(__file__).resolve().parent
+MODULE_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = MODULE_DIR
 LOCAL_CJK_FONT_FILE_CANDIDATES = (
     "fonts/AlibabaPuHuiTi-Regular.ttf",
     "fonts/AlibabaPuHuiTi-Bold.ttf",
@@ -501,49 +474,16 @@ def _city_poster_output_path(city_name):
 
 
 def _resolve_city_poster_font_file():
-    for candidate in LOCAL_CJK_FONT_FILE_CANDIDATES:
-        path = SCRIPT_DIR / candidate
-        if path.exists():
-            return path
+    search_dirs = (SCRIPT_DIR,)
+    if SCRIPT_DIR != MODULE_DIR:
+        search_dirs += (MODULE_DIR,)
 
-    font_file = _find_fontconfig_cjk_font()
-    if font_file is not None:
-        return font_file
-
-    for candidate in CJK_FONT_FILE_CANDIDATES:
-        path = Path(candidate)
-        if path.exists():
-            return path
+    for base_dir in search_dirs:
+        for candidate in LOCAL_CJK_FONT_FILE_CANDIDATES:
+            path = base_dir / candidate
+            if path.exists():
+                return path
     return None
-
-
-def _find_fontconfig_cjk_font():
-    try:
-        result = subprocess.run(
-            ["fc-list", ":lang=zh", "-f", "%{family}\t%{file}\n"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return None
-
-    fallback = None
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        family, _, file_path = line.partition("\t")
-        path = Path(file_path.strip())
-        if not file_path or not path.exists():
-            continue
-        if fallback is None:
-            fallback = path
-        normalized_family = family.lower()
-        if any(
-            keyword.lower() in normalized_family for keyword in CJK_FONT_FAMILY_KEYWORDS
-        ):
-            return path
-    return fallback
 
 
 def _get_geocode_db_path():

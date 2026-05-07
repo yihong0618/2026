@@ -27,6 +27,14 @@ STATE_FILES = [
     get_up.CITY_GEOCODE_DB,
 ]
 WORLD_CACHE_FILE = get_up._WORLD_CACHE_FILE
+TEST_SEED_ENV = "DAILY_MESSAGE_TEST_SEED"
+
+
+def _new_test_seed():
+    seed = os.environ.get(TEST_SEED_ENV)
+    if seed is not None:
+        return int(seed)
+    return int.from_bytes(os.urandom(8), "big")
 
 
 @contextmanager
@@ -55,6 +63,21 @@ def isolated_state_files():
             get_up._WORLD_CACHE_FILE = original_world_cache
 
 
+@contextmanager
+def randomized_daily_choices():
+    original_daily_rng = get_up._daily_rng
+    test_seed = _new_test_seed()
+
+    def test_daily_rng(now, salt=0):
+        return original_daily_rng(now, salt + test_seed)
+
+    get_up._daily_rng = test_daily_rng
+    try:
+        yield test_seed
+    finally:
+        get_up._daily_rng = original_daily_rng
+
+
 def run_component(label, func):
     print(f"[START] {label}", flush=True)
     started_at = time.time()
@@ -77,7 +100,10 @@ def main():
     print("=" * 60, flush=True)
     print(flush=True)
 
-    with isolated_state_files():
+    with isolated_state_files(), randomized_daily_choices() as test_seed:
+        print(f"测试随机 seed: {test_seed}", flush=True)
+        print(flush=True)
+
         now = pendulum.now(get_up.TIMEZONE)
         is_get_up_early = 3 <= now.hour <= 9
 
