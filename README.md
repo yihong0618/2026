@@ -2,7 +2,8 @@
 
 2026 多关心家人朋友，如果有余力，去完成自己剩下的遗憾。
 
-- [ ] 争取去深圳（广州）或是成都
+- [x] 争取去深圳（广州）或是成都
+- [ ] 去参加 pycon
 
 <!--START_SECTION:my_github-->
 ## The repos I created
