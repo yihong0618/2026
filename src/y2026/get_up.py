@@ -1099,6 +1099,40 @@ def _extract_domain(url):
         return ""
 
 
+def _normalize_link_domain(url):
+    if not isinstance(url, str) or not url:
+        return ""
+
+    try:
+        domain = urlparse(url).hostname or ""
+    except Exception:
+        return ""
+
+    domain = domain.lower().rstrip(".")
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
+def _is_same_link_site(original_url, final_url):
+    original_domain = _normalize_link_domain(original_url)
+    final_domain = _normalize_link_domain(final_url)
+    if not original_domain or not final_domain:
+        return False
+    return (
+        original_domain == final_domain
+        or original_domain.endswith(f".{final_domain}")
+        or final_domain.endswith(f".{original_domain}")
+    )
+
+
+def _response_stays_on_link_site(original_url, response):
+    final_url = getattr(response, "url", None)
+    if not isinstance(final_url, str) or not final_url:
+        final_url = original_url
+    return _is_same_link_site(original_url, final_url)
+
+
 def _load_used_sites():
     return set(_read_non_empty_lines(_data_file_path(BLOG_SITES_USED_FILE)))
 
@@ -1119,6 +1153,8 @@ def _check_link_available(url, timeout=10):
             timeout=timeout,
             allow_redirects=True,
         )
+        if not _response_stays_on_link_site(url, response):
+            return False
         if 200 <= response.status_code < 400:
             return True
         if response.status_code not in {403, 405, 406, 429, 500, 501}:
@@ -1131,8 +1167,13 @@ def _check_link_available(url, timeout=10):
             allow_redirects=True,
             stream=True,
         )
-        response.close()
-        return 200 <= response.status_code < 400
+        try:
+            return (
+                _response_stays_on_link_site(url, response)
+                and 200 <= response.status_code < 400
+            )
+        finally:
+            response.close()
     except requests.exceptions.RequestException:
         return False
 

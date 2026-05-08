@@ -506,6 +506,47 @@ class GetUpHackerNewsHistoryTests(unittest.TestCase):
         get_response.close.assert_called_once()
         get.assert_called_once()
 
+    def test_check_link_available_rejects_cross_domain_head_redirect(self):
+        head_response = mock.Mock()
+        head_response.status_code = 200
+        head_response.url = "https://parking.example/sale"
+
+        with (
+            mock.patch.object(get_up.requests, "head", return_value=head_response),
+            mock.patch.object(get_up.requests, "get") as get,
+        ):
+            result = get_up._check_link_available("https://blog.example.com/article")
+
+        self.assertFalse(result)
+        get.assert_not_called()
+
+    def test_check_link_available_rejects_cross_domain_get_redirect(self):
+        head_response = mock.Mock()
+        head_response.status_code = 405
+        head_response.url = "https://blog.example.com/article"
+        get_response = mock.Mock()
+        get_response.status_code = 200
+        get_response.url = "https://parking.example/sale"
+
+        with (
+            mock.patch.object(get_up.requests, "head", return_value=head_response),
+            mock.patch.object(get_up.requests, "get", return_value=get_response),
+        ):
+            result = get_up._check_link_available("https://blog.example.com/article")
+
+        self.assertFalse(result)
+        get_response.close.assert_called_once()
+
+    def test_check_link_available_allows_same_site_redirect(self):
+        head_response = mock.Mock()
+        head_response.status_code = 200
+        head_response.url = "https://example.com/article"
+
+        with mock.patch.object(get_up.requests, "head", return_value=head_response):
+            result = get_up._check_link_available("https://blog.example.com/article")
+
+        self.assertTrue(result)
+
     def test_format_hacker_news_history_story_falls_back_to_hn_as_article_link(self):
         story = get_up.HackerNewsStory(
             object_id="42",
