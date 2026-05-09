@@ -1,4 +1,14 @@
-.PHONY: sync test online-test lint format type-check video
+.PHONY: help sync test online-test lint format type-check video
+
+help:
+	@printf "Available targets:\n"
+	@printf "  sync         Sync dependencies with uv\n"
+	@printf "  test         Run the test suite\n"
+	@printf "  online-test  Run daily-message online tests\n"
+	@printf "  lint         Run type checks, ruff, and black checks\n"
+	@printf "  format       Format and autofix source and tests\n"
+	@printf "  type-check   Run mypy\n"
+	@printf "  video        Build the city-poster video\n"
 
 sync:
 	uv sync --all-groups
