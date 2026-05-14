@@ -85,3 +85,4 @@ same-tree
 liang-ge-lian-biao-de-di-yi-ge-gong-gong-jie-dian-lcof
 separate-the-digits-in-an-array
 check-if-array-is-good
+remove-all-adjacent-duplicates-in-string
