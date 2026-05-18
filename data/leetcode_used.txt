@@ -87,3 +87,4 @@ separate-the-digits-in-an-array
 check-if-array-is-good
 remove-all-adjacent-duplicates-in-string
 detect-capital
+minimum-common-value
