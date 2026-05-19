@@ -88,3 +88,4 @@ check-if-array-is-good
 remove-all-adjacent-duplicates-in-string
 detect-capital
 minimum-common-value
+valid-parentheses
