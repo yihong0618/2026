@@ -31,3 +31,4 @@ search-a-2d-matrix-ii
 swap-nodes-in-pairs
 best-time-to-buy-and-sell-stock
 perfect-squares
+valid-parentheses
