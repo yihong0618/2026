@@ -227,8 +227,15 @@ def _load_problem_pool(problem_file):
     return problems
 
 
-def _pick_problem_from_pool(problem_file, used_file, now):
-    used_slugs = set(_read_non_empty_lines(used_file))
+def _load_used_problem_slugs(used_files):
+    used_slugs = set()
+    for used_file in used_files:
+        used_slugs.update(_read_non_empty_lines(used_file))
+    return used_slugs
+
+
+def _pick_problem_from_pool(problem_file, used_file, now, global_used_files=None):
+    used_slugs = _load_used_problem_slugs(global_used_files or (used_file,))
     available = [
         problem
         for problem in _load_problem_pool(problem_file)
@@ -309,14 +316,15 @@ def get_daily_leetcode():
         easy_used_file = _data_file_path(LEETCODE_USED_FILE)
         hot100_file = _data_file_path(LEETCODE_HOT100_FILE)
         hot100_used_file = _data_file_path(LEETCODE_HOT100_USED_FILE)
+        global_used_files = (easy_used_file, hot100_used_file)
 
         results = []
-        easy_used_slugs = set(_read_non_empty_lines(easy_used_file))
+        used_slugs = _load_used_problem_slugs(global_used_files)
         daily_question = _get_leetcode_daily_question()
         if (
             daily_question
             and daily_question.difficulty == "EASY"
-            and daily_question.slug not in easy_used_slugs
+            and daily_question.slug not in used_slugs
         ):
             _append_line(easy_used_file, daily_question.slug)
             results.append(
@@ -327,14 +335,24 @@ def get_daily_leetcode():
             )
 
         if not results and _daily_rng(now, HOT100_RANDOM_SALT).random() < 0.5:
-            hot100_problem = _pick_problem_from_pool(hot100_file, hot100_used_file, now)
+            hot100_problem = _pick_problem_from_pool(
+                hot100_file,
+                hot100_used_file,
+                now,
+                global_used_files,
+            )
             if hot100_problem:
                 results.append(_format_hot100_problem(hot100_problem))
             else:
                 results.append("热题 100 都做完啦！🎉")
 
         if not results:
-            easy_problem = _pick_problem_from_pool(easy_file, easy_used_file, now)
+            easy_problem = _pick_problem_from_pool(
+                easy_file,
+                easy_used_file,
+                now,
+                global_used_files,
+            )
             if easy_problem:
                 results.append(_format_easy_problem(easy_problem))
             else:

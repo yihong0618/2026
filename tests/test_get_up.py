@@ -211,6 +211,109 @@ class GetUpPosterTests(unittest.TestCase):
                 get_up.SCRIPT_DIR = original_script_dir
 
 
+class GetUpLeetCodeTests(unittest.TestCase):
+    def test_pick_problem_from_pool_skips_slugs_used_by_another_pool(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "data"
+            data_dir.mkdir()
+            problem_file = data_dir / "pool.txt"
+            used_file = data_dir / "leetcode_used.txt"
+            other_used_file = data_dir / "leetcode_hot100_used.txt"
+            problem_file.write_text(
+                "\n".join(
+                    [
+                        "1|Seen Elsewhere|seen-elsewhere|EASY",
+                        "2|Fresh Problem|fresh-problem|EASY",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            used_file.write_text("", encoding="utf-8")
+            other_used_file.write_text("seen-elsewhere\n", encoding="utf-8")
+
+            selected = get_up._pick_problem_from_pool(
+                problem_file,
+                used_file,
+                pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE),
+                (used_file, other_used_file),
+            )
+
+            self.assertEqual(selected.slug, "fresh-problem")
+            self.assertEqual(
+                used_file.read_text(encoding="utf-8").splitlines(),
+                ["fresh-problem"],
+            )
+
+    def test_daily_leetcode_skips_daily_question_used_by_hot100(self):
+        class StableRng:
+            def random(self):
+                return 0.6
+
+            def choice(self, values):
+                return values[0]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                data_dir = Path(tmpdir) / "data"
+                data_dir.mkdir()
+                (data_dir / "leetcode_easy.txt").write_text(
+                    "\n".join(
+                        [
+                            "1|Daily Used|daily-used|EASY",
+                            "2|Fresh Easy|fresh-easy|EASY",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (data_dir / "leetcode_used.txt").write_text("", encoding="utf-8")
+                (data_dir / "leetcode_hot100.txt").write_text("", encoding="utf-8")
+                (data_dir / "leetcode_hot100_used.txt").write_text(
+                    "daily-used\n",
+                    encoding="utf-8",
+                )
+                daily_question = get_up.LeetCodeProblem(
+                    problem_id="1",
+                    title="Daily Used",
+                    slug="daily-used",
+                    difficulty="EASY",
+                )
+
+                with (
+                    mock.patch.object(
+                        get_up,
+                        "_now",
+                        return_value=pendulum.datetime(
+                            2026,
+                            5,
+                            21,
+                            tz=get_up.TIMEZONE,
+                        ),
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_get_leetcode_daily_question",
+                        return_value=daily_question,
+                    ),
+                    mock.patch.object(get_up, "_daily_rng", return_value=StableRng()),
+                ):
+                    result = get_up.get_daily_leetcode()
+
+                self.assertIn("Fresh Easy", result)
+                self.assertNotIn("Daily Used", result)
+                self.assertEqual(
+                    (data_dir / "leetcode_used.txt")
+                    .read_text(encoding="utf-8")
+                    .splitlines(),
+                    ["fresh-easy"],
+                )
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+
 class GetUpHackerNewsHistoryTests(unittest.TestCase):
     def test_fetch_hacker_news_top_stories_for_date_sorts_by_points_and_limits(self):
         response = mock.Mock()
