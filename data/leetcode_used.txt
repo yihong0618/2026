@@ -90,3 +90,4 @@ detect-capital
 minimum-common-value
 valid-parentheses
 ti-huan-kong-ge-lcof
+check-if-array-is-sorted-and-rotated
