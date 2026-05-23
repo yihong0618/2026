@@ -32,3 +32,4 @@ swap-nodes-in-pairs
 best-time-to-buy-and-sell-stock
 perfect-squares
 valid-parentheses
+lowest-common-ancestor-of-a-binary-tree
