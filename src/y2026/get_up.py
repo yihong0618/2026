@@ -86,8 +86,19 @@ WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
 WIKIDATA_ITEM_URL = "https://www.wikidata.org/wiki/{qid}"
 NEODB_BASE_URL = "https://neodb.social"
-NEODB_TRENDING_MUSIC_URL = f"{NEODB_BASE_URL}/api/trending/music/"
-NEODB_ALBUM_API_URL = f"{NEODB_BASE_URL}/api/album/{{uuid}}"
+NEODB_TRENDING_URLS = {
+    "book": f"{NEODB_BASE_URL}/api/trending/book/",
+    "film": f"{NEODB_BASE_URL}/api/trending/movie/",
+    "game": f"{NEODB_BASE_URL}/api/trending/game/",
+    "music": f"{NEODB_BASE_URL}/api/trending/music/",
+}
+NEODB_DETAIL_API_URLS = {
+    "book": f"{NEODB_BASE_URL}/api/book/{{uuid}}",
+    "film": f"{NEODB_BASE_URL}/api/movie/{{uuid}}",
+    "game": f"{NEODB_BASE_URL}/api/game/{{uuid}}",
+    "music": f"{NEODB_BASE_URL}/api/album/{{uuid}}",
+}
+CLASSIC_NEODB_DETAIL_LIMIT = 24
 CLASSIC_MEDIA_SEARCH_ROWS = 50
 CLASSIC_MEDIA_PAGE_ATTEMPTS = 5
 CLASSIC_MEDIA_MIN_AGE_YEARS = 10
@@ -109,19 +120,21 @@ CLASSIC_MEDIA_KINDS = (
         "key": "game",
         "label": "游戏",
         "release_word": "发售",
+        "creator_fields": ("developer", "publisher"),
         "wikidata_filter": "?item wdt:P31/wdt:P279* wd:Q7889 .",
     },
     {
         "key": "film",
         "label": "电影",
         "release_word": "上映",
+        "creator_fields": ("director",),
         "wikidata_filter": "?item wdt:P31/wdt:P279* wd:Q11424 .",
     },
     {
         "key": "music",
         "label": "音乐",
         "release_word": "发行",
-        "neodb_only": True,
+        "creator_fields": ("artist", "company"),
         "wikidata_filter": """
   {
     ?item wdt:P31/wdt:P279* wd:Q482994 .
@@ -138,9 +151,9 @@ CLASSIC_MEDIA_KINDS = (
     },
     {
         "key": "book",
-        "label": "老书",
+        "label": "book",
         "release_word": "出版",
-        "archive_only": True,
+        "creator_fields": ("author", "publisher"),
         "require_chinese_label": True,
         "wikidata_filter": """
   {
@@ -762,7 +775,103 @@ def _rect_overlap_area(a, b):
     return float(dx * dy)
 
 
-def _compute_label_offsets(lons, lats, labels, ax, fontsize=9):
+def _rect_outside_area(rect, bounds):
+    left = max(0.0, bounds[0] - rect[0])
+    right = max(0.0, rect[2] - bounds[2])
+    bottom = max(0.0, bounds[1] - rect[1])
+    top = max(0.0, rect[3] - bounds[3])
+    return (
+        left * (rect[3] - rect[1])
+        + right * (rect[3] - rect[1])
+        + bottom * (rect[2] - rect[0])
+        + top * (rect[2] - rect[0])
+    )
+
+
+def _rect_center_distance(a, b):
+    import math
+
+    ax = (a[0] + a[2]) * 0.5
+    ay = (a[1] + a[3]) * 0.5
+    bx = (b[0] + b[2]) * 0.5
+    by = (b[1] + b[3]) * 0.5
+    return math.hypot(ax - bx, ay - by)
+
+
+def _label_box_for_offset(px, py, width, height, dx, dy, pts_to_px):
+    anchor_x = px + dx * pts_to_px
+    anchor_y = py + dy * pts_to_px
+    if dx < 0:
+        x0 = anchor_x - width
+        x1 = anchor_x
+    else:
+        x0 = anchor_x
+        x1 = anchor_x + width
+    y0 = anchor_y - height * 0.5
+    y1 = anchor_y + height * 0.5
+    return (x0, y0, x1, y1)
+
+
+def _measure_label_sizes(labels, ax, fontsize=8, priority_labels=()):
+    fig = ax.get_figure()
+    dpi = fig.dpi
+    pts_to_px = dpi / 72.0
+    priority_labels = set(priority_labels)
+
+    def fallback_size(label):
+        label_fontsize = fontsize + 2 if label in priority_labels else fontsize
+        avg_char_w = label_fontsize * 0.95 * pts_to_px
+        return (
+            len(label) * avg_char_w + 14 * pts_to_px,
+            label_fontsize * 2.0 * pts_to_px,
+        )
+
+    canvas = getattr(fig, "canvas", None)
+    if canvas is None:
+        return [fallback_size(label) for label in labels]
+
+    texts = []
+    try:
+        for label in labels:
+            is_priority = label in priority_labels
+            label_fontsize = fontsize + 2 if is_priority else fontsize
+            texts.append(
+                ax.text(
+                    0,
+                    0,
+                    label,
+                    fontsize=label_fontsize,
+                    fontweight="bold" if is_priority else "normal",
+                    ha="left",
+                    va="center",
+                    alpha=0.0,
+                    bbox=dict(
+                        boxstyle="round,pad=0.34" if is_priority else "round,pad=0.24",
+                        facecolor="white",
+                        edgecolor="white",
+                    ),
+                )
+            )
+        canvas.draw()
+        renderer = canvas.get_renderer()
+        sizes = []
+        for text in texts:
+            bbox_patch = text.get_bbox_patch()
+            extent = (
+                bbox_patch.get_window_extent(renderer)
+                if bbox_patch is not None
+                else text.get_window_extent(renderer)
+            )
+            sizes.append((extent.width + 2 * pts_to_px, extent.height + 2 * pts_to_px))
+        return sizes
+    except Exception:
+        return [fallback_size(label) for label in labels]
+    finally:
+        for text in texts:
+            text.remove()
+
+
+def _compute_label_offsets(lons, lats, labels, ax, fontsize=8, priority_labels=()):
     import math
 
     n = len(lons)
@@ -771,56 +880,77 @@ def _compute_label_offsets(lons, lats, labels, ax, fontsize=9):
     fig = ax.get_figure()
     dpi = fig.dpi
     pts_to_px = dpi / 72.0
-    avg_char_w = fontsize * 0.65 * pts_to_px
-    label_h = fontsize * 1.6 * pts_to_px
     display_pts = [ax.transData.transform((lon, lat)) for lon, lat in zip(lons, lats)]
-    label_widths = [len(lbl) * avg_char_w + 10 * pts_to_px for lbl in labels]
-    base_angles = [30, 330, 60, 300, 0, 90, 270, 150, 210, 120, 240, 180]
+    label_sizes = _measure_label_sizes(
+        labels, ax, fontsize=fontsize, priority_labels=priority_labels
+    )
+    base_angles = [25, 335, 60, 300, 0, 90, 270, 150, 210, 120, 240, 180]
     candidates = []
-    for dist in (10, 20, 34, 52, 74):
+    for dist in (9, 16, 26, 40, 58, 80, 108, 140):
         for angle_deg in base_angles:
             rad = math.radians(angle_deg)
             candidates.append(
                 (round(dist * math.cos(rad), 1), round(dist * math.sin(rad), 1))
             )
-    dot_radius = 8
+    dot_radius = 7 * pts_to_px
     dot_boxes = [
         (px - dot_radius, py - dot_radius, px + dot_radius, py + dot_radius)
         for px, py in display_pts
     ]
     offsets = [None] * n
     placed_boxes = []
-    proximity_threshold = 18 * pts_to_px
-    for i in range(n):
+    priority_labels = set(priority_labels)
+    density_radius = 95 * pts_to_px
+    densities = []
+    for i, point in enumerate(display_pts):
+        density = 0.0
+        for j, other in enumerate(display_pts):
+            if i == j:
+                continue
+            distance = math.hypot(point[0] - other[0], point[1] - other[1])
+            if distance < density_radius:
+                density += (density_radius - distance) / density_radius
+        densities.append(density)
+    placement_order = sorted(
+        range(n),
+        key=lambda i: (
+            labels[i] not in priority_labels,
+            -densities[i],
+            -len(labels[i]),
+            i,
+        ),
+    )
+    proximity_threshold = 11 * pts_to_px
+    axes_bounds = ax.get_window_extent().bounds
+    axes_bounds = (
+        axes_bounds[0] + 6 * pts_to_px,
+        axes_bounds[1] + 6 * pts_to_px,
+        axes_bounds[0] + axes_bounds[2] - 6 * pts_to_px,
+        axes_bounds[1] + axes_bounds[3] - 6 * pts_to_px,
+    )
+    for i in placement_order:
         px, py = display_pts[i]
-        w = label_widths[i]
-        h = label_h
+        w, h = label_sizes[i]
         best_offset = candidates[0]
         best_cost = float("inf")
         best_box = (0.0, 0.0, 0.0, 0.0)
         for dx, dy in candidates:
-            dx_px = dx * pts_to_px
-            dy_px = dy * pts_to_px
-            lx = (px + dx_px - w) if dx < 0 else (px + dx_px)
-            ly = py + dy_px
-            box = (lx, ly, lx + w, ly + h)
+            box = _label_box_for_offset(px, py, w, h, dx, dy, pts_to_px)
             cost = 0.0
             for pb in placed_boxes:
                 overlap = _rect_overlap_area(box, pb)
                 if overlap > 0:
-                    cost += overlap * 10
+                    cost += overlap * 40
                 else:
-                    cx1 = (box[0] + box[2]) * 0.5
-                    cy1 = (box[1] + box[3]) * 0.5
-                    cx2 = (pb[0] + pb[2]) * 0.5
-                    cy2 = (pb[1] + pb[3]) * 0.5
-                    d = math.hypot(cx1 - cx2, cy1 - cy2)
+                    d = _rect_center_distance(box, pb)
                     if d < proximity_threshold:
-                        cost += (proximity_threshold - d) * 0.5
+                        cost += (proximity_threshold - d) * 0.8
             for j, db in enumerate(dot_boxes):
-                if j != i:
-                    cost += _rect_overlap_area(box, db) * 5
-            cost += math.hypot(dx, dy) * 0.15
+                cost += _rect_overlap_area(box, db) * (18 if j == i else 12)
+            cost += _rect_outside_area(box, axes_bounds) * 80
+            cost += math.hypot(dx, dy) * 0.08
+            if abs(dy) < 4:
+                cost += 5
             if cost < best_cost:
                 best_cost = cost
                 best_offset = (dx, dy)
@@ -852,16 +982,16 @@ def _render_cities_map(city_coords, today_city=""):
     pad_lat = max((max_lat - min_lat) * 0.15, 3)
     view_min_lon = max(70, min_lon - pad_lon)
     view_max_lon = min(140, max_lon + pad_lon)
-    view_min_lat = max(15, min_lat - pad_lat)
+    view_min_lat = max(10, min_lat - pad_lat)
     view_max_lat = min(55, max_lat + pad_lat)
 
     world = _load_world_geodata()
 
-    fig = Figure(figsize=(12, 8), dpi=150)
-    fig.set_facecolor("#F8FAFC")
+    fig = Figure(figsize=(13.5, 8.8), dpi=160)
+    fig.set_facecolor("#F6F8FB")
     canvas = FigureCanvasAgg(fig)
     ax = fig.subplots(1, 1)
-    ax.set_facecolor("#DDECF8")
+    ax.set_facecolor("#DCECF8")
 
     if world is not None:
         try:
@@ -874,9 +1004,9 @@ def _render_cities_map(city_coords, today_city=""):
             world_clipped = world
         world_clipped.plot(
             ax=ax,
-            color="#ECE9E1",
-            edgecolor="#B0B5BB",
-            linewidth=0.6,
+            color="#F1EEE6",
+            edgecolor="#AEB8C2",
+            linewidth=0.55,
             zorder=1,
         )
 
@@ -885,11 +1015,11 @@ def _render_cities_map(city_coords, today_city=""):
         ax.scatter(
             [c[2] for c in other_coords],
             [c[1] for c in other_coords],
-            s=80,
-            c="#E76F51",
-            alpha=0.9,
+            s=62,
+            c="#E66A4F",
+            alpha=0.92,
             edgecolors="#FFFFFF",
-            linewidths=1.5,
+            linewidths=1.2,
             zorder=3,
         )
 
@@ -898,51 +1028,62 @@ def _render_cities_map(city_coords, today_city=""):
         ax.scatter(
             [c[2] for c in today_coords],
             [c[1] for c in today_coords],
-            s=220,
+            s=210,
             c="#F4A261",
             alpha=0.95,
-            edgecolors="#264653",
-            linewidths=2.0,
+            edgecolors="#214C5C",
+            linewidths=2.2,
             zorder=5,
         )
+
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlim(view_min_lon, view_max_lon)
+    ax.set_ylim(view_min_lat, view_max_lat)
+    ax.margins(0)
+    canvas.draw()
 
     lons = [c[2] for c in city_coords]
     lats = [c[1] for c in city_coords]
     labels = [c[0] for c in city_coords]
 
-    label_offsets = _compute_label_offsets(lons, lats, labels, ax, fontsize=9)
+    label_offsets = _compute_label_offsets(
+        lons, lats, labels, ax, fontsize=8, priority_labels=(today_city,)
+    )
     for lon, lat, label, offset in zip(lons, lats, labels, label_offsets):
         is_today = label == today_city
         ha = "left" if offset[0] >= 0 else "right"
+        leader_len = (offset[0] ** 2 + offset[1] ** 2) ** 0.5
+        arrowprops = None
+        if leader_len >= 14 or is_today:
+            arrowprops = dict(
+                arrowstyle="-",
+                color="#D97706" if is_today else "#9AA7B3",
+                linewidth=0.8 if is_today else 0.45,
+                alpha=0.82 if is_today else 0.48,
+                shrinkA=2,
+                shrinkB=3,
+            )
         ann = dict(
             textcoords="offset points",
             xytext=offset,
-            fontsize=10 if is_today else 9,
-            fontweight="bold",
+            fontsize=10 if is_today else 8,
+            fontweight="bold" if is_today else "normal",
             color="#1F2937" if is_today else "#264653",
             ha=ha,
+            va="center",
             bbox=dict(
-                boxstyle="round,pad=0.35" if is_today else "round,pad=0.3",
+                boxstyle="round,pad=0.34" if is_today else "round,pad=0.24",
                 facecolor="#FEF3C7" if is_today else "white",
-                alpha=0.98 if is_today else 0.95,
+                alpha=0.98 if is_today else 0.88,
                 edgecolor="#F59E0B" if is_today else "#A8B0BA",
                 linewidth=1.2 if is_today else 0.8,
             ),
-            arrowprops=dict(
-                arrowstyle="-",
-                color="#F59E0B" if is_today else "#B0B5BB",
-                linewidth=0.8 if is_today else 0.5,
-                shrinkA=0,
-                shrinkB=3,
-            ),
+            arrowprops=arrowprops,
             zorder=6 if is_today else 4,
         )
         ax.annotate(label, (lon, lat), **ann)
 
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlim(view_min_lon, view_max_lon)
-    ax.set_ylim(view_min_lat, view_max_lat)
-    ax.grid(color="#CBD5E1", linestyle="--", linewidth=0.6, alpha=0.55, zorder=0)
+    ax.grid(color="#CBD5E1", linestyle="--", linewidth=0.55, alpha=0.35, zorder=0)
     title = (
         f"已探索城市地图（{len(city_coords)} 个城市）"
         if not today_city
@@ -955,13 +1096,13 @@ def _render_cities_map(city_coords, today_city=""):
         pad=12,
         color="#1F2937",
     )
-    ax.set_xlabel("经度", fontsize=10, color="#334155")
-    ax.set_ylabel("纬度", fontsize=10, color="#334155")
-    ax.tick_params(labelsize=8, colors="#64748B")
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.tick_params(labelsize=8, colors="#64748B", length=0)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#B8C0CA")
-    ax.spines["bottom"].set_color("#B8C0CA")
+    ax.spines["left"].set_color("#CBD5E1")
+    ax.spines["bottom"].set_color("#CBD5E1")
 
     fig.tight_layout(pad=1.0)
     output_dir = SCRIPT_DIR / CITY_POSTERS_DIR
@@ -1421,7 +1562,38 @@ def _neodb_external_resource_url(item, preferred_domain="douban.com"):
     return ""
 
 
-def _classic_music_from_neodb_item(item):
+def _neodb_list_text(item, fields):
+    values = []
+    for field in fields:
+        value = item.get(field)
+        if isinstance(value, list):
+            values.extend(str(part).strip() for part in value if str(part).strip())
+        elif value:
+            values.append(str(value).strip())
+        if values:
+            break
+    return " / ".join(values)
+
+
+def _neodb_release_date_text(item, kind):
+    release_date = _archive_field_text(item.get("release_date"))
+    if release_date:
+        return release_date
+
+    if kind["key"] == "film" and item.get("year"):
+        return str(item["year"])
+
+    if kind["key"] == "book" and item.get("pub_year"):
+        year = str(item["pub_year"])
+        month = item.get("pub_month")
+        if month:
+            return f"{year}-{int(month):02d}"
+        return year
+
+    return ""
+
+
+def _classic_media_from_neodb_item(item, kind):
     uuid = _archive_field_text(item.get("uuid"))
     title = _preferred_text(item.get("display_title"), item.get("title"))
     if not uuid or not title:
@@ -1435,20 +1607,20 @@ def _classic_music_from_neodb_item(item):
         item.get("description"),
         zh=_has_cjk(str(item.get("description", ""))),
     )
-    artists = item.get("artist") or []
-    artist_text = " / ".join(
-        str(artist).strip() for artist in artists if str(artist).strip()
-    )
-    release_date = _archive_field_text(item.get("release_date"))
+    if kind["key"] == "book" and not _has_cjk(title):
+        return None
+
+    creator_text = _neodb_list_text(item, kind.get("creator_fields", ()))
+    release_date = _neodb_release_date_text(item, kind)
 
     source_url = _neodb_absolute_url(item.get("url")) or _neodb_absolute_url(
         item.get("id")
     )
     external_url = _neodb_external_resource_url(item)
     return ClassicGame(
-        identifier=f"neodb-album-{uuid}",
+        identifier=f"neodb-{kind['key']}-{uuid}",
         title=title,
-        creator=artist_text,
+        creator=creator_text,
         year=release_date[:4],
         description=description,
         downloads=0,
@@ -1458,10 +1630,14 @@ def _classic_music_from_neodb_item(item):
         source_url=source_url,
         wikidata_url="",
         external_url=external_url,
-        media_type="music",
-        media_label="音乐",
-        release_word="发行",
+        media_type=kind["key"],
+        media_label=kind["label"],
+        release_word=kind["release_word"],
     )
+
+
+def _classic_music_from_neodb_item(item):
+    return _classic_media_from_neodb_item(item, CLASSIC_MEDIA_KINDS[2])
 
 
 def _has_cjk(text):
@@ -1675,19 +1851,37 @@ def _fetch_classic_chinese_books(now, page):
 
 
 def _is_old_release(release_date, now):
-    if not release_date:
+    year = _release_year(release_date)
+    if year is None:
         return False
+    return year <= now.year - CLASSIC_MEDIA_MIN_AGE_YEARS
+
+
+def _release_year(release_date):
+    match = re.match(r"^(\d{4})", str(release_date or ""))
+    if not match:
+        return None
     try:
-        release_day = pendulum.parse(release_date)
-    except Exception:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _is_history_today_release(release_date, now):
+    match = re.match(r"^\d{4}-(\d{2})-(\d{2})$", str(release_date or ""))
+    if not match:
         return False
-    return release_day.year <= now.year - CLASSIC_MEDIA_MIN_AGE_YEARS
+    return int(match.group(1)) == now.month and int(match.group(2)) == now.day
 
 
-def _fetch_neodb_trending_music():
+def _fetch_neodb_trending_items(kind):
+    url = NEODB_TRENDING_URLS.get(kind["key"], "")
+    if not url:
+        return []
+
     try:
         response = requests.get(
-            NEODB_TRENDING_MUSIC_URL,
+            url,
             headers=_neodb_headers(),
             timeout=8,
         )
@@ -1695,14 +1889,18 @@ def _fetch_neodb_trending_music():
             return []
         return response.json()
     except requests.exceptions.RequestException as error:
-        print(f"Error fetching NeoDB music: {error}")
+        print(f"Error fetching NeoDB {kind['label']}: {error}")
         return []
 
 
-def _fetch_neodb_album(uuid):
+def _fetch_neodb_item_detail(kind, uuid):
+    url = NEODB_DETAIL_API_URLS.get(kind["key"], "").format(uuid=uuid)
+    if not url:
+        return None
+
     try:
         response = requests.get(
-            NEODB_ALBUM_API_URL.format(uuid=uuid),
+            url,
             headers=_neodb_headers(),
             timeout=8,
         )
@@ -1710,27 +1908,58 @@ def _fetch_neodb_album(uuid):
             return None
         return response.json()
     except requests.exceptions.RequestException as error:
-        print(f"Error fetching NeoDB album: {error}")
+        print(f"Error fetching NeoDB {kind['label']} detail: {error}")
         return None
 
 
-def _select_neodb_music(now, used_keys):
-    items = _fetch_neodb_trending_music()
-    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT + 3)
-    rng.shuffle(items)
+def _candidate_priority(media, now):
+    is_today = _is_history_today_release(media.release_date, now)
+    is_old = _is_old_release(media.release_date, now)
+    if is_today and is_old:
+        return 0
+    if is_today:
+        return 1
+    if is_old:
+        return 2
+    return 3
 
-    for item in items[:20]:
+
+def _select_neodb_media(now, used_keys, kind):
+    items = _fetch_neodb_trending_items(kind)
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT + 3)
+
+    candidates = []
+    for item in list(items)[:CLASSIC_NEODB_DETAIL_LIMIT]:
         uuid = _archive_field_text(item.get("uuid"))
         if not uuid:
             continue
 
-        album = _fetch_neodb_album(uuid) or item
-        music = _classic_music_from_neodb_item(album)
-        if music is None or music.key in used_keys:
+        detail = _fetch_neodb_item_detail(kind, uuid) or item
+        media = _classic_media_from_neodb_item(detail, kind)
+        if media is None or media.key in used_keys:
             continue
-        if _is_old_release(music.release_date, now):
-            return music
-    return None
+        candidates.append(media)
+
+    if not candidates:
+        return None
+
+    priority = min(_candidate_priority(media, now) for media in candidates)
+    best_candidates = [
+        media for media in candidates if _candidate_priority(media, now) == priority
+    ]
+    return rng.choice(best_candidates)
+
+
+def _fetch_neodb_trending_music():
+    return _fetch_neodb_trending_items(CLASSIC_MEDIA_KINDS[2])
+
+
+def _fetch_neodb_album(uuid):
+    return _fetch_neodb_item_detail(CLASSIC_MEDIA_KINDS[2], uuid)
+
+
+def _select_neodb_music(now, used_keys):
+    return _select_neodb_media(now, used_keys, CLASSIC_MEDIA_KINDS[2])
 
 
 def _select_same_day_classic_media_release(now, used_keys, kind):
@@ -1818,16 +2047,22 @@ def _format_release_age(release_date, now=None):
     if not release_date:
         return ""
 
-    try:
-        release_day = pendulum.parse(release_date)
-    except Exception:
-        return release_date
-
     current_time = now or _now()
-    years_ago = current_time.year - release_day.year
-    if release_day.month == current_time.month and release_day.day == current_time.day:
-        return f"{release_day.to_date_string()}（{years_ago} 年前的今天）"
-    return f"{release_day.to_date_string()}（{years_ago} 年前）"
+    text = str(release_date)
+    exact_date_match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", text)
+    if exact_date_match:
+        year = int(exact_date_match.group(1))
+        month = int(exact_date_match.group(2))
+        day = int(exact_date_match.group(3))
+        years_ago = current_time.year - year
+        if month == current_time.month and day == current_time.day:
+            return f"{text}（{years_ago} 年前的今天）"
+        return f"{text}（{years_ago} 年前）"
+
+    year = _release_year(text)
+    if year is None:
+        return text
+    return f"{text}（{current_time.year - year} 年前）"
 
 
 def _classic_game_display_title(game):
@@ -1860,16 +2095,15 @@ def _format_classic_game_intro(game, now=None):
     if game.description:
         lines.append(f"简介：{game.description}")
     else:
-        lines.append(f"简介：Internet Archive 收录的{game.media_label}，可以在线打开。")
+        lines.append(f"简介：NeoDB 收录的{game.media_label}。")
 
     if game.source == "Wikidata":
         lines.append(
             f"Wikidata：[{game.identifier.removeprefix('wikidata-')}]({game.url})"
         )
     elif game.source == "NeoDB":
-        lines.append(
-            f"NeoDB：[{game.identifier.removeprefix('neodb-album-')}]({game.url})"
-        )
+        neodb_id = game.identifier.removeprefix(f"neodb-{game.media_type}-")
+        lines.append(f"NeoDB：[{neodb_id}]({game.url})")
     else:
         lines.append(f"Archive：[{game.identifier}]({game.archive_url})")
         if game.wikidata_url and game.chinese_title:
@@ -1891,22 +2125,7 @@ def get_classic_media_intro():
         now = _now()
         used_keys = _load_used_classic_media()
         kind = _select_classic_media_kind(now)
-        if kind.get("neodb_only"):
-            game = _select_neodb_music(now, used_keys)
-        elif kind.get("archive_only"):
-            game = _select_classic_chinese_book(now, used_keys)
-        else:
-            game = _select_same_day_classic_media_release(now, used_keys, kind)
-            if game is None:
-                game = _select_other_day_classic_media_release(now, used_keys, kind)
-            if game is None:
-                game = (
-                    _select_classic_game(now, used_keys)
-                    if kind["key"] == "game"
-                    else None
-                )
-                if game is not None and kind["key"] == "game":
-                    game = _with_wikidata_chinese_title(game)
+        game = _select_neodb_media(now, used_keys, kind)
         if game is None:
             return ""
 

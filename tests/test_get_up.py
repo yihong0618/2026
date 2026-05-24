@@ -211,6 +211,54 @@ class GetUpPosterTests(unittest.TestCase):
                 get_up.SCRIPT_DIR = original_script_dir
 
 
+class GetUpMapTests(unittest.TestCase):
+    def test_compute_label_offsets_separates_dense_labels(self):
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        get_up._setup_matplotlib_font()
+
+        labels = ["北京", "天津", "廊坊", "唐山", "保定", "沧州", "济南", "德州"]
+        lons = [116.40, 117.20, 116.70, 118.18, 115.48, 116.84, 117.12, 116.36]
+        lats = [39.90, 39.12, 39.53, 39.63, 38.87, 38.31, 36.65, 37.43]
+
+        fig = Figure(figsize=(8, 5), dpi=120)
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.subplots(1, 1)
+        ax.set_xlim(114, 120)
+        ax.set_ylim(35.8, 40.6)
+        ax.set_aspect("equal", adjustable="box")
+        canvas.draw()
+
+        fontsize = 8
+        offsets = get_up._compute_label_offsets(
+            lons, lats, labels, ax, fontsize=fontsize, priority_labels=("北京",)
+        )
+
+        pts_to_px = fig.dpi / 72.0
+        label_sizes = get_up._measure_label_sizes(
+            labels, ax, fontsize=fontsize, priority_labels=("北京",)
+        )
+        boxes = []
+        for lon, lat, label_size, offset in zip(lons, lats, label_sizes, offsets):
+            px, py = ax.transData.transform((lon, lat))
+            boxes.append(
+                get_up._label_box_for_offset(
+                    px,
+                    py,
+                    label_size[0],
+                    label_size[1],
+                    offset[0],
+                    offset[1],
+                    pts_to_px,
+                )
+            )
+
+        for i, box in enumerate(boxes):
+            for other in boxes[i + 1 :]:
+                self.assertEqual(get_up._rect_overlap_area(box, other), 0.0)
+
+
 class GetUpLeetCodeTests(unittest.TestCase):
     def test_pick_problem_from_pool_skips_slugs_used_by_another_pool(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -354,162 +402,133 @@ class GetUpClassicGameTests(unittest.TestCase):
         self.assertEqual(game.description, "Video game Doom 2 for MS-DOS.")
         self.assertEqual(game.downloads, 123)
 
-    def test_get_classic_media_intro_skips_used_game_and_saves_new_key(self):
-        class NoShuffleRng:
-            def shuffle(self, values):
-                return None
-
+    def test_get_classic_media_intro_saves_selected_neodb_media(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             original_script_dir = get_up.SCRIPT_DIR
             get_up.SCRIPT_DIR = Path(tmpdir)
             try:
                 (Path(tmpdir) / "data").mkdir()
                 used_game = get_up.ClassicGame(
-                    identifier="used",
+                    identifier="neodb-game-used",
                     title="Used Game",
                     creator="Old Studio",
                     year="1990",
                     description="Already used.",
-                    downloads=10,
-                    source="MS-DOS Games",
+                    downloads=0,
+                    source="NeoDB",
+                    release_date="1990-01-01",
+                    source_url="https://neodb.social/game/used",
+                    media_type="game",
+                    media_label="游戏",
                 )
                 new_game = get_up.ClassicGame(
-                    identifier="new",
+                    identifier="neodb-game-new",
                     title="New Game",
                     creator="New Studio",
                     year="1991",
                     description="A fresh old game.",
-                    downloads=20,
-                    source="MS-DOS Games",
+                    downloads=0,
+                    source="NeoDB",
+                    release_date="1991-02-03",
+                    source_url="https://neodb.social/game/new",
+                    media_type="game",
+                    media_label="游戏",
                 )
                 used_path = Path(tmpdir) / get_up.CLASSIC_MEDIA_USED_FILE
                 used_path.write_text(f"{used_game.key}\n", encoding="utf-8")
+                now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+                kind = get_up.CLASSIC_MEDIA_KINDS[0]
 
                 with (
                     mock.patch.object(
                         get_up,
                         "_now",
-                        return_value=pendulum.datetime(
-                            2026,
-                            5,
-                            21,
-                            tz=get_up.TIMEZONE,
-                        ),
+                        return_value=now,
                     ),
                     mock.patch.object(
                         get_up,
                         "_select_classic_media_kind",
-                        return_value=get_up.CLASSIC_MEDIA_KINDS[0],
+                        return_value=kind,
                     ),
                     mock.patch.object(
                         get_up,
-                        "_select_same_day_classic_media_release",
-                        return_value=None,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_other_day_classic_media_release",
-                        return_value=None,
-                    ),
-                    mock.patch.object(
-                        get_up, "_daily_rng", return_value=NoShuffleRng()
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_fetch_classic_game_page_count",
-                        return_value=1,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_fetch_classic_games",
-                        return_value=[used_game, new_game],
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_with_wikidata_chinese_title",
-                        side_effect=lambda game: game,
-                    ),
+                        "_select_neodb_media",
+                        return_value=new_game,
+                    ) as select_neodb,
                 ):
                     result = get_up.get_classic_media_intro()
 
                 self.assertIn("good old days：游戏", result)
-                self.assertIn("[New Game](https://archive.org/details/new)", result)
+                self.assertIn("[New Game](https://neodb.social/game/new)", result)
                 self.assertIn("简介：A fresh old game.", result)
+                select_neodb.assert_called_once_with(now, {used_game.key}, kind)
                 used_keys = used_path.read_text(encoding="utf-8").splitlines()
                 self.assertEqual(used_keys, [used_game.key, new_game.key])
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
 
-    def test_get_classic_media_intro_prefers_same_day_release(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_script_dir = get_up.SCRIPT_DIR
-            get_up.SCRIPT_DIR = Path(tmpdir)
-            try:
-                (Path(tmpdir) / "data").mkdir()
-                same_day_game = get_up.ClassicGame(
-                    identifier="wikidata-Q217423",
-                    title="Quake",
-                    creator="",
-                    year="1998",
-                    description="1996 first-person shooter video game",
-                    downloads=0,
-                    source="Wikidata",
-                    release_date="1998-05-24",
-                    chinese_title="雷神之锤",
-                    source_url="https://www.wikidata.org/wiki/Q217423",
-                    wikidata_url="https://www.wikidata.org/wiki/Q217423",
-                )
+    def test_select_neodb_media_prefers_same_day_release(self):
+        now = pendulum.datetime(2026, 5, 24, tz=get_up.TIMEZONE)
+        kind = get_up.CLASSIC_MEDIA_KINDS[0]
+        details = {
+            "old": {
+                "uuid": "old",
+                "title": "Old Game",
+                "display_title": "Old Game",
+                "description": "Old but not today.",
+                "url": "/game/old",
+                "developer": ["Old Studio"],
+                "release_date": "1998-05-23",
+            },
+            "today": {
+                "uuid": "today",
+                "title": "Today Game",
+                "display_title": "Today Game",
+                "description": "Released today.",
+                "url": "/game/today",
+                "developer": ["Today Studio"],
+                "release_date": "1997-05-24",
+            },
+        }
 
-                with (
-                    mock.patch.object(
-                        get_up,
-                        "_now",
-                        return_value=pendulum.datetime(
-                            2026,
-                            5,
-                            24,
-                            tz=get_up.TIMEZONE,
-                        ),
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_classic_media_kind",
-                        return_value=get_up.CLASSIC_MEDIA_KINDS[0],
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_same_day_classic_media_release",
-                        return_value=same_day_game,
-                    ),
-                    mock.patch.object(get_up, "_select_classic_game") as select_random,
-                ):
-                    result = get_up.get_classic_media_intro()
+        with (
+            mock.patch.object(
+                get_up,
+                "_fetch_neodb_trending_items",
+                return_value=[{"uuid": "old"}, {"uuid": "today"}],
+            ),
+            mock.patch.object(
+                get_up,
+                "_fetch_neodb_item_detail",
+                side_effect=lambda _kind, uuid: details[uuid],
+            ),
+        ):
+            selected = get_up._select_neodb_media(now, set(), kind)
 
-                self.assertIn("雷神之锤（Quake）", result)
-                self.assertIn("1998-05-24（28 年前的今天）", result)
-                self.assertIn("中文名：雷神之锤", result)
-                select_random.assert_not_called()
-            finally:
-                get_up.SCRIPT_DIR = original_script_dir
+        self.assertEqual(selected.title, "Today Game")
+        self.assertEqual(selected.release_date, "1997-05-24")
 
-    def test_get_classic_media_intro_falls_back_to_chinese_book(self):
+    def test_get_classic_media_intro_uses_neodb_book(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             original_script_dir = get_up.SCRIPT_DIR
             get_up.SCRIPT_DIR = Path(tmpdir)
             try:
                 (Path(tmpdir) / "data").mkdir()
                 book = get_up.ClassicGame(
-                    identifier="old-book",
+                    identifier="neodb-book-old-book",
                     title="老舍小说集",
                     creator="老舍",
                     year="1936",
                     description="中文旧书。",
-                    downloads=30,
-                    source="Internet Archive 中文文本",
+                    downloads=0,
+                    source="NeoDB",
+                    release_date="1936-05",
+                    source_url="https://neodb.social/book/old-book",
                     media_type="book",
-                    media_label="老书",
+                    media_label="book",
                     release_word="出版",
                 )
+                kind = get_up.CLASSIC_MEDIA_KINDS[3]
 
                 with (
                     mock.patch.object(
@@ -525,29 +544,19 @@ class GetUpClassicGameTests(unittest.TestCase):
                     mock.patch.object(
                         get_up,
                         "_select_classic_media_kind",
-                        return_value=get_up.CLASSIC_MEDIA_KINDS[3],
+                        return_value=kind,
                     ),
                     mock.patch.object(
                         get_up,
-                        "_select_same_day_classic_media_release",
-                        return_value=None,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_other_day_classic_media_release",
-                        return_value=None,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_classic_chinese_book",
+                        "_select_neodb_media",
                         return_value=book,
                     ),
                 ):
                     result = get_up.get_classic_media_intro()
 
-                self.assertIn("good old days：老书", result)
+                self.assertIn("good old days：book", result)
                 self.assertIn("老舍小说集", result)
-                self.assertIn("Internet Archive 中文文本 / 1936 / 老舍", result)
+                self.assertIn("NeoDB / 1936-05（90 年前） / 老舍", result)
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
 
@@ -558,7 +567,7 @@ class GetUpClassicGameTests(unittest.TestCase):
             try:
                 (Path(tmpdir) / "data").mkdir()
                 music = get_up.ClassicGame(
-                    identifier="neodb-album-abc",
+                    identifier="neodb-music-abc",
                     title="In Rainbows",
                     creator="Radiohead",
                     year="2007",
@@ -593,11 +602,12 @@ class GetUpClassicGameTests(unittest.TestCase):
                         get_up,
                         "_select_neodb_music",
                         return_value=music,
-                    ) as select_music,
+                    ),
                     mock.patch.object(
                         get_up,
-                        "_select_same_day_classic_media_release",
-                    ) as select_wikidata,
+                        "_select_neodb_media",
+                        return_value=music,
+                    ) as select_neodb,
                 ):
                     result = get_up.get_classic_media_intro()
 
@@ -608,8 +618,7 @@ class GetUpClassicGameTests(unittest.TestCase):
                     "外部条目：[music.douban.com](https://music.douban.com/subject/2278148/)",
                     result,
                 )
-                select_music.assert_called_once()
-                select_wikidata.assert_not_called()
+                select_neodb.assert_called_once()
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
 
@@ -646,7 +655,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         result = get_up._format_classic_game_intro(game)
 
         self.assertIn("Internet Arcade / 1986", result)
-        self.assertIn("Internet Archive 收录", result)
+        self.assertIn("NeoDB 收录", result)
 
 
 class GetUpHackerNewsHistoryTests(unittest.TestCase):
