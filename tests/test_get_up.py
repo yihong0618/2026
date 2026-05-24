@@ -314,6 +314,341 @@ class GetUpLeetCodeTests(unittest.TestCase):
                 get_up.SCRIPT_DIR = original_script_dir
 
 
+class GetUpClassicGameTests(unittest.TestCase):
+    def test_classic_media_from_wikidata_binding_uses_chinese_label_and_date(self):
+        game = get_up._classic_media_from_wikidata_binding(
+            {
+                "item": {"value": "http://www.wikidata.org/entity/Q217423"},
+                "release": {"value": "1998-05-24T00:00:00Z"},
+                "zhLabel": {"value": "雷神之锤"},
+                "enLabel": {"value": "Quake"},
+                "enDescription": {"value": "1996 first-person shooter video game"},
+            },
+            get_up.CLASSIC_MEDIA_KINDS[0],
+        )
+
+        self.assertEqual(game.identifier, "wikidata-Q217423")
+        self.assertEqual(game.title, "Quake")
+        self.assertEqual(game.chinese_title, "雷神之锤")
+        self.assertEqual(game.release_date, "1998-05-24")
+        self.assertEqual(game.year, "1998")
+        self.assertEqual(game.url, "https://www.wikidata.org/wiki/Q217423")
+
+    def test_classic_game_from_doc_cleans_archive_fields(self):
+        game = get_up._classic_game_from_doc(
+            {
+                "identifier": "Doom-2",
+                "title": "Doom 2 [MS-DOS]",
+                "creator": "Id Software",
+                "year": "1994",
+                "description": "<p>Video game <b>Doom 2</b> for MS-DOS.</p>",
+                "downloads": "123",
+            },
+            "MS-DOS Games",
+        )
+
+        self.assertEqual(game.identifier, "Doom-2")
+        self.assertEqual(game.title, "Doom 2 (MS-DOS)")
+        self.assertEqual(game.creator, "Id Software")
+        self.assertEqual(game.year, "1994")
+        self.assertEqual(game.description, "Video game Doom 2 for MS-DOS.")
+        self.assertEqual(game.downloads, 123)
+
+    def test_get_classic_media_intro_skips_used_game_and_saves_new_key(self):
+        class NoShuffleRng:
+            def shuffle(self, values):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                (Path(tmpdir) / "data").mkdir()
+                used_game = get_up.ClassicGame(
+                    identifier="used",
+                    title="Used Game",
+                    creator="Old Studio",
+                    year="1990",
+                    description="Already used.",
+                    downloads=10,
+                    source="MS-DOS Games",
+                )
+                new_game = get_up.ClassicGame(
+                    identifier="new",
+                    title="New Game",
+                    creator="New Studio",
+                    year="1991",
+                    description="A fresh old game.",
+                    downloads=20,
+                    source="MS-DOS Games",
+                )
+                used_path = Path(tmpdir) / get_up.CLASSIC_MEDIA_USED_FILE
+                used_path.write_text(f"{used_game.key}\n", encoding="utf-8")
+
+                with (
+                    mock.patch.object(
+                        get_up,
+                        "_now",
+                        return_value=pendulum.datetime(
+                            2026,
+                            5,
+                            21,
+                            tz=get_up.TIMEZONE,
+                        ),
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_classic_media_kind",
+                        return_value=get_up.CLASSIC_MEDIA_KINDS[0],
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_same_day_classic_media_release",
+                        return_value=None,
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_other_day_classic_media_release",
+                        return_value=None,
+                    ),
+                    mock.patch.object(
+                        get_up, "_daily_rng", return_value=NoShuffleRng()
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_fetch_classic_game_page_count",
+                        return_value=1,
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_fetch_classic_games",
+                        return_value=[used_game, new_game],
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_with_wikidata_chinese_title",
+                        side_effect=lambda game: game,
+                    ),
+                ):
+                    result = get_up.get_classic_media_intro()
+
+                self.assertIn("good old days：游戏", result)
+                self.assertIn("[New Game](https://archive.org/details/new)", result)
+                self.assertIn("简介：A fresh old game.", result)
+                used_keys = used_path.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(used_keys, [used_game.key, new_game.key])
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_get_classic_media_intro_prefers_same_day_release(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                (Path(tmpdir) / "data").mkdir()
+                same_day_game = get_up.ClassicGame(
+                    identifier="wikidata-Q217423",
+                    title="Quake",
+                    creator="",
+                    year="1998",
+                    description="1996 first-person shooter video game",
+                    downloads=0,
+                    source="Wikidata",
+                    release_date="1998-05-24",
+                    chinese_title="雷神之锤",
+                    source_url="https://www.wikidata.org/wiki/Q217423",
+                    wikidata_url="https://www.wikidata.org/wiki/Q217423",
+                )
+
+                with (
+                    mock.patch.object(
+                        get_up,
+                        "_now",
+                        return_value=pendulum.datetime(
+                            2026,
+                            5,
+                            24,
+                            tz=get_up.TIMEZONE,
+                        ),
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_classic_media_kind",
+                        return_value=get_up.CLASSIC_MEDIA_KINDS[0],
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_same_day_classic_media_release",
+                        return_value=same_day_game,
+                    ),
+                    mock.patch.object(get_up, "_select_classic_game") as select_random,
+                ):
+                    result = get_up.get_classic_media_intro()
+
+                self.assertIn("雷神之锤（Quake）", result)
+                self.assertIn("1998-05-24（28 年前的今天）", result)
+                self.assertIn("中文名：雷神之锤", result)
+                select_random.assert_not_called()
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_get_classic_media_intro_falls_back_to_chinese_book(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                (Path(tmpdir) / "data").mkdir()
+                book = get_up.ClassicGame(
+                    identifier="old-book",
+                    title="老舍小说集",
+                    creator="老舍",
+                    year="1936",
+                    description="中文旧书。",
+                    downloads=30,
+                    source="Internet Archive 中文文本",
+                    media_type="book",
+                    media_label="老书",
+                    release_word="出版",
+                )
+
+                with (
+                    mock.patch.object(
+                        get_up,
+                        "_now",
+                        return_value=pendulum.datetime(
+                            2026,
+                            5,
+                            24,
+                            tz=get_up.TIMEZONE,
+                        ),
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_classic_media_kind",
+                        return_value=get_up.CLASSIC_MEDIA_KINDS[3],
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_same_day_classic_media_release",
+                        return_value=None,
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_other_day_classic_media_release",
+                        return_value=None,
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_classic_chinese_book",
+                        return_value=book,
+                    ),
+                ):
+                    result = get_up.get_classic_media_intro()
+
+                self.assertIn("good old days：老书", result)
+                self.assertIn("老舍小说集", result)
+                self.assertIn("Internet Archive 中文文本 / 1936 / 老舍", result)
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_get_classic_media_intro_uses_neodb_for_music(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                (Path(tmpdir) / "data").mkdir()
+                music = get_up.ClassicGame(
+                    identifier="neodb-album-abc",
+                    title="In Rainbows",
+                    creator="Radiohead",
+                    year="2007",
+                    description="英伦巨头 Radiohead 的第7张录音室专辑。",
+                    downloads=0,
+                    source="NeoDB",
+                    release_date="2007-10-10",
+                    source_url="https://neodb.social/album/abc",
+                    external_url="https://music.douban.com/subject/2278148/",
+                    media_type="music",
+                    media_label="音乐",
+                    release_word="发行",
+                )
+
+                with (
+                    mock.patch.object(
+                        get_up,
+                        "_now",
+                        return_value=pendulum.datetime(
+                            2026,
+                            5,
+                            24,
+                            tz=get_up.TIMEZONE,
+                        ),
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_classic_media_kind",
+                        return_value=get_up.CLASSIC_MEDIA_KINDS[2],
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_select_neodb_music",
+                        return_value=music,
+                    ) as select_music,
+                    mock.patch.object(
+                        get_up,
+                        "_select_same_day_classic_media_release",
+                    ) as select_wikidata,
+                ):
+                    result = get_up.get_classic_media_intro()
+
+                self.assertIn("good old days：音乐", result)
+                self.assertIn("2007-10-10（19 年前）", result)
+                self.assertIn("NeoDB：[abc](https://neodb.social/album/abc)", result)
+                self.assertIn(
+                    "外部条目：[music.douban.com](https://music.douban.com/subject/2278148/)",
+                    result,
+                )
+                select_music.assert_called_once()
+                select_wikidata.assert_not_called()
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_fetch_wikidata_chinese_title_uses_video_game_result(self):
+        response = mock.Mock()
+        response.ok = True
+        response.json.return_value = {
+            "search": [
+                {
+                    "id": "Q755186",
+                    "label": "毁灭战士II",
+                    "description": "1994 first-person shooter video game",
+                }
+            ]
+        }
+
+        with mock.patch.object(get_up.requests, "get", return_value=response):
+            title, url = get_up._fetch_wikidata_chinese_title("Doom II")
+
+        self.assertEqual(title, "毁灭战士II")
+        self.assertEqual(url, "https://www.wikidata.org/wiki/Q755186")
+
+    def test_format_classic_game_intro_has_description_fallback(self):
+        game = get_up.ClassicGame(
+            identifier="arcade_example",
+            title="Arcade Example",
+            creator="",
+            year="1986",
+            description="",
+            downloads=0,
+            source="Internet Arcade",
+        )
+
+        result = get_up._format_classic_game_intro(game)
+
+        self.assertIn("Internet Arcade / 1986", result)
+        self.assertIn("Internet Archive 收录", result)
+
+
 class GetUpHackerNewsHistoryTests(unittest.TestCase):
     def test_fetch_hacker_news_top_stories_for_date_sorts_by_points_and_limits(self):
         response = mock.Mock()
@@ -672,7 +1007,7 @@ class GetUpHackerNewsHistoryTests(unittest.TestCase):
             result,
         )
 
-    def test_build_get_up_message_parts_uses_selected_blog_year_for_hn(self):
+    def test_build_get_up_message_parts_uses_classic_media_intro(self):
         now = pendulum.datetime(2026, 5, 7, 8, 0, tz=get_up.TIMEZONE)
 
         with (
@@ -686,14 +1021,14 @@ class GetUpHackerNewsHistoryTests(unittest.TestCase):
             ),
             mock.patch.object(
                 get_up,
-                "get_hacker_news_history",
-                return_value="hn",
-            ) as hacker_news,
+                "get_classic_media_intro",
+                return_value="old media",
+            ) as classic_media,
         ):
             parts = get_up._build_get_up_message_parts(now)
 
-        hacker_news.assert_called_once_with(2018)
-        self.assertEqual(parts.history_today, "hn")
+        classic_media.assert_called_once_with()
+        self.assertEqual(parts.history_today, "old media")
         self.assertEqual(parts.blog_article, "blog")
 
 

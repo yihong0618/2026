@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -50,6 +51,7 @@ LEETCODE_HOT100_FILE = "data/leetcode_hot100.txt"
 LEETCODE_HOT100_USED_FILE = "data/leetcode_hot100_used.txt"
 BLOG_SITES_USED_FILE = "data/blog_sites_used.txt"
 HACKER_NEWS_USED_FILE = "data/hacker_news_used.txt"
+CLASSIC_MEDIA_USED_FILE = "data/classic_media_used.txt"
 CHINESE_CITIES_FILE = "data/chinese_cities.txt"
 CITIES_USED_FILE = "data/cities_used.txt"
 
@@ -78,6 +80,80 @@ HACKER_NEWS_ITEM_URL = "https://news.ycombinator.com/item?id={object_id}"
 HACKER_NEWS_START_YEAR = 2007
 HACKER_NEWS_STORIES_PER_PAGE = 1000
 HACKER_NEWS_TOP_LIMIT = 10
+INTERNET_ARCHIVE_SEARCH_URL = "https://archive.org/advancedsearch.php"
+INTERNET_ARCHIVE_ITEM_URL = "https://archive.org/details/{identifier}"
+WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
+WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php"
+WIKIDATA_ITEM_URL = "https://www.wikidata.org/wiki/{qid}"
+NEODB_BASE_URL = "https://neodb.social"
+NEODB_TRENDING_MUSIC_URL = f"{NEODB_BASE_URL}/api/trending/music/"
+NEODB_ALBUM_API_URL = f"{NEODB_BASE_URL}/api/album/{{uuid}}"
+CLASSIC_MEDIA_SEARCH_ROWS = 50
+CLASSIC_MEDIA_PAGE_ATTEMPTS = 5
+CLASSIC_MEDIA_MIN_AGE_YEARS = 10
+CLASSIC_MEDIA_RELEASE_LIMIT = 80
+CLASSIC_MEDIA_RANDOM_DATE_ATTEMPTS = 4
+CLASSIC_CHINESE_BOOK_PAGE_LIMIT = 20
+CLASSIC_GAME_SEARCHES = (
+    (
+        "MS-DOS Games",
+        "collection:softwarelibrary_msdos_games AND mediatype:software AND subject:game",
+    ),
+    ("Internet Arcade", "collection:internetarcade AND mediatype:software"),
+)
+CLASSIC_CHINESE_BOOK_SEARCH_TEMPLATE = (
+    "mediatype:texts AND language:chi AND date:[1800 TO {max_year}]"
+)
+CLASSIC_MEDIA_KINDS = (
+    {
+        "key": "game",
+        "label": "游戏",
+        "release_word": "发售",
+        "wikidata_filter": "?item wdt:P31/wdt:P279* wd:Q7889 .",
+    },
+    {
+        "key": "film",
+        "label": "电影",
+        "release_word": "上映",
+        "wikidata_filter": "?item wdt:P31/wdt:P279* wd:Q11424 .",
+    },
+    {
+        "key": "music",
+        "label": "音乐",
+        "release_word": "发行",
+        "neodb_only": True,
+        "wikidata_filter": """
+  {
+    ?item wdt:P31/wdt:P279* wd:Q482994 .
+  }
+  UNION
+  {
+    ?item wdt:P31/wdt:P279* wd:Q134556 .
+  }
+  UNION
+  {
+    ?item wdt:P31/wdt:P279* wd:Q7366 .
+  }
+""",
+    },
+    {
+        "key": "book",
+        "label": "老书",
+        "release_word": "出版",
+        "archive_only": True,
+        "require_chinese_label": True,
+        "wikidata_filter": """
+  {
+    ?item wdt:P31/wdt:P279* wd:Q571 .
+  }
+  UNION
+  {
+    ?item wdt:P31/wdt:P279* wd:Q47461344 .
+  }
+  ?item wdt:P407 wd:Q7850 .
+""",
+    },
+)
 BLOG_HISTORY_START_YEAR = 2005
 BLOG_HISTORY_END_YEAR = 2025
 BLOG_RANDOM_SEARCH_ATTEMPTS = 5
@@ -85,6 +161,7 @@ BLOG_LINK_CHECK_ATTEMPTS = 10
 HOT100_RANDOM_SALT = 42
 BLOG_RANDOM_SALT = 99
 HACKER_NEWS_RANDOM_SALT = 123
+CLASSIC_MEDIA_RANDOM_SALT = 321
 EARLY_GET_UP_HOURS = range(3, 10)
 
 BIRTH_YEAR = 1989  # change it to your birth year
@@ -131,6 +208,37 @@ class HackerNewsStory:
     @property
     def key(self):
         return f"hn:{self.object_id}"
+
+
+@dataclass(frozen=True)
+class ClassicGame:
+    identifier: str
+    title: str
+    creator: str
+    year: str
+    description: str
+    downloads: int
+    source: str
+    release_date: str = ""
+    chinese_title: str = ""
+    source_url: str = ""
+    wikidata_url: str = ""
+    external_url: str = ""
+    media_type: str = "game"
+    media_label: str = "游戏"
+    release_word: str = "发售"
+
+    @property
+    def archive_url(self):
+        return INTERNET_ARCHIVE_ITEM_URL.format(identifier=self.identifier)
+
+    @property
+    def url(self):
+        return self.source_url or self.archive_url
+
+    @property
+    def key(self):
+        return f"classic-media:{self.media_type}:{self.identifier}"
 
 
 @dataclass(frozen=True)
@@ -1036,6 +1144,783 @@ def get_hacker_news_history(target_year=None):
         return ""
 
 
+def _load_used_classic_media():
+    return set(_read_non_empty_lines(_data_file_path(CLASSIC_MEDIA_USED_FILE)))
+
+
+def _save_used_classic_media(key):
+    if key:
+        _append_line(_data_file_path(CLASSIC_MEDIA_USED_FILE), key)
+
+
+def _wikidata_headers(accept=None):
+    headers = {"User-Agent": WIKIMEDIA_USER_AGENT}
+    if accept:
+        headers["Accept"] = accept
+    return headers
+
+
+def _neodb_headers():
+    return {"User-Agent": WIKIMEDIA_USER_AGENT, "Accept": "application/json"}
+
+
+def _binding_value(binding, name):
+    value = binding.get(name, {})
+    if isinstance(value, dict):
+        return value.get("value", "")
+    return ""
+
+
+def _wikidata_qid(value):
+    if not value:
+        return ""
+    return value.rstrip("/").split("/")[-1]
+
+
+def _preferred_text(*values, zh=False):
+    for value in values:
+        if value:
+            text = _clean_hn_text(value, 240)
+            if text:
+                return convert(text, "zh-cn") if zh else text
+    return ""
+
+
+def classic_media_chinese_label_filter(kind):
+    if kind.get("require_chinese_label"):
+        return "FILTER(BOUND(?zhLabel) || BOUND(?zhCnLabel) || BOUND(?zhHansLabel))"
+    return ""
+
+
+def _classic_media_release_query(kind, now, month, day):
+    max_year = now.year - CLASSIC_MEDIA_MIN_AGE_YEARS
+    wikidata_filter = kind["wikidata_filter"]
+    return f"""
+PREFIX wd: <http://www.wikidata.org/entity/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX p: <http://www.wikidata.org/prop/>
+PREFIX psv: <http://www.wikidata.org/prop/statement/value/>
+PREFIX wikibase: <http://wikiba.se/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX schema: <http://schema.org/>
+SELECT ?item ?release ?zhLabel ?zhCnLabel ?zhHansLabel ?enLabel ?zhDescription ?enDescription WHERE {{
+  {wikidata_filter}
+  ?item p:P577 ?releaseStatement .
+  ?releaseStatement psv:P577 ?releaseNode .
+  ?releaseNode wikibase:timeValue ?release ; wikibase:timePrecision ?precision .
+  FILTER(?precision >= 11)
+  FILTER(MONTH(?release) = {month} && DAY(?release) = {day})
+  FILTER(YEAR(?release) <= {max_year})
+  OPTIONAL {{ ?item rdfs:label ?zhLabel FILTER(LANG(?zhLabel) = "zh") }}
+  OPTIONAL {{ ?item rdfs:label ?zhCnLabel FILTER(LANG(?zhCnLabel) = "zh-cn") }}
+  OPTIONAL {{ ?item rdfs:label ?zhHansLabel FILTER(LANG(?zhHansLabel) = "zh-hans") }}
+  OPTIONAL {{ ?item rdfs:label ?enLabel FILTER(LANG(?enLabel) = "en") }}
+  OPTIONAL {{ ?item schema:description ?zhDescription FILTER(LANG(?zhDescription) = "zh") }}
+  OPTIONAL {{ ?item schema:description ?enDescription FILTER(LANG(?enDescription) = "en") }}
+  {classic_media_chinese_label_filter(kind)}
+}}
+ORDER BY ?release ?item
+LIMIT {CLASSIC_MEDIA_RELEASE_LIMIT}
+"""
+
+
+def _fetch_classic_media_releases(kind, now, month, day):
+    try:
+        response = requests.get(
+            WIKIDATA_SPARQL_URL,
+            params={
+                "query": _classic_media_release_query(kind, now, month, day),
+                "format": "json",
+            },
+            headers=_wikidata_headers("application/sparql-results+json"),
+            timeout=10,
+        )
+        if not response.ok:
+            return []
+
+        games = []
+        for binding in response.json().get("results", {}).get("bindings", []):
+            game = _classic_media_from_wikidata_binding(binding, kind)
+            if game is not None:
+                games.append(game)
+        return games
+    except Exception as error:
+        print(f"Error fetching Wikidata {kind['label']} releases: {error}")
+        return []
+
+
+def _classic_media_from_wikidata_binding(binding, kind):
+    qid = _wikidata_qid(_binding_value(binding, "item"))
+    if not qid:
+        return None
+
+    chinese_title = _preferred_text(
+        _binding_value(binding, "zhHansLabel"),
+        _binding_value(binding, "zhCnLabel"),
+        _binding_value(binding, "zhLabel"),
+        zh=True,
+    )
+    english_title = _preferred_text(_binding_value(binding, "enLabel"))
+    if kind["key"] == "book" and chinese_title:
+        title = chinese_title
+    else:
+        title = english_title or chinese_title
+    if not title:
+        return None
+
+    release_date = _binding_value(binding, "release").split("T", 1)[0]
+    description = _preferred_text(
+        _binding_value(binding, "zhDescription"),
+        zh=True,
+    )
+    if not description:
+        description = _preferred_text(_binding_value(binding, "enDescription"))
+
+    wikidata_url = WIKIDATA_ITEM_URL.format(qid=qid)
+    return ClassicGame(
+        identifier=f"wikidata-{qid}",
+        title=title,
+        creator="",
+        year=release_date[:4],
+        description=description,
+        downloads=0,
+        source="Wikidata",
+        release_date=release_date,
+        chinese_title=chinese_title if chinese_title != title else "",
+        source_url=wikidata_url,
+        wikidata_url=wikidata_url,
+        media_type=kind["key"],
+        media_label=kind["label"],
+        release_word=kind["release_word"],
+    )
+
+
+def _archive_field_text(value):
+    if isinstance(value, list):
+        return ", ".join(str(item).strip() for item in value if str(item).strip())
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _archive_year_text(value):
+    text = _archive_field_text(value)
+    match = re.search(r"\b(19\d{2}|20\d{2})\b", text)
+    if match:
+        return match.group(1)
+    return text[:20]
+
+
+def _clean_classic_game_description(value, max_length=220):
+    text = _clean_hn_text(_archive_field_text(value), max_length=900)
+    if not text:
+        return ""
+
+    text = re.sub(r"\bClick here for the manual\.?\s*", "", text, flags=re.I)
+    text = re.sub(r"\bAlso For\b", "Also for", text)
+    text = re.sub(r"\bDeveloped by\b", "Developed by", text)
+    text = re.sub(r"\bPublished by\b", "Published by", text)
+    text = re.sub(r"\bReleased\b", "Released", text)
+    text = " ".join(text.split())
+
+    control_markers = (
+        "1 Player Start",
+        "2 Players Start",
+        "Coin 1",
+        "Service Mode",
+        "P1 Button",
+        "Paddle Analog",
+    )
+    if any(marker in text[:350] for marker in control_markers):
+        return ""
+
+    return _clean_hn_text(text, max_length)
+
+
+def _classic_game_from_doc(doc, source):
+    identifier = _archive_field_text(doc.get("identifier"))
+    title = _clean_hn_text(doc.get("title"), 180).replace("[", "(").replace("]", ")")
+    if not identifier or not title:
+        return None
+
+    year = _archive_year_text(doc.get("year") or doc.get("date"))
+    return ClassicGame(
+        identifier=identifier,
+        title=title,
+        creator=_clean_hn_text(doc.get("creator"), 120),
+        year=year,
+        description=_clean_classic_game_description(doc.get("description")),
+        downloads=_parse_hn_int(doc.get("downloads")),
+        source=source,
+    )
+
+
+def _classic_chinese_book_from_doc(doc):
+    identifier = _archive_field_text(doc.get("identifier"))
+    title = convert(
+        _clean_hn_text(doc.get("title"), 180).replace("[", "(").replace("]", ")"),
+        "zh-cn",
+    )
+    if not identifier or not title or not _has_cjk(title):
+        return None
+
+    year = _archive_year_text(doc.get("year") or doc.get("date"))
+    return ClassicGame(
+        identifier=identifier,
+        title=title,
+        creator=convert(_clean_hn_text(doc.get("creator"), 120), "zh-cn"),
+        year=year,
+        description=convert(
+            _clean_classic_game_description(doc.get("description")), "zh-cn"
+        ),
+        downloads=_parse_hn_int(doc.get("downloads")),
+        source="Internet Archive 中文文本",
+        media_type="book",
+        media_label="老书",
+        release_word="出版",
+    )
+
+
+def _neodb_absolute_url(url):
+    if not url:
+        return ""
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/"):
+        return f"{NEODB_BASE_URL}{url}"
+    return f"{NEODB_BASE_URL}/{url}"
+
+
+def _neodb_localized_text(
+    values,
+    preferred_languages=("zh-cn", "zh-hans", "zh", "zh-tw", "zh-hant"),
+):
+    if not isinstance(values, list):
+        return ""
+
+    by_lang = {
+        str(item.get("lang", "")).lower(): str(item.get("text", "")).strip()
+        for item in values
+        if isinstance(item, dict) and item.get("text")
+    }
+    for language in preferred_languages:
+        if by_lang.get(language):
+            return convert(by_lang[language], "zh-cn")
+    return ""
+
+
+def _neodb_external_resource_url(item, preferred_domain="douban.com"):
+    for resource in item.get("external_resources") or []:
+        url = resource.get("url", "") if isinstance(resource, dict) else ""
+        if preferred_domain in url:
+            return url
+    for resource in item.get("external_resources") or []:
+        url = resource.get("url", "") if isinstance(resource, dict) else ""
+        if url:
+            return url
+    return ""
+
+
+def _classic_music_from_neodb_item(item):
+    uuid = _archive_field_text(item.get("uuid"))
+    title = _preferred_text(item.get("display_title"), item.get("title"))
+    if not uuid or not title:
+        return None
+    if _has_cjk(title):
+        title = convert(title, "zh-cn")
+
+    chinese_title = _neodb_localized_text(item.get("localized_title"))
+    description = _preferred_text(
+        _neodb_localized_text(item.get("localized_description")),
+        item.get("description"),
+        zh=_has_cjk(str(item.get("description", ""))),
+    )
+    artists = item.get("artist") or []
+    artist_text = " / ".join(
+        str(artist).strip() for artist in artists if str(artist).strip()
+    )
+    release_date = _archive_field_text(item.get("release_date"))
+
+    source_url = _neodb_absolute_url(item.get("url")) or _neodb_absolute_url(
+        item.get("id")
+    )
+    external_url = _neodb_external_resource_url(item)
+    return ClassicGame(
+        identifier=f"neodb-album-{uuid}",
+        title=title,
+        creator=artist_text,
+        year=release_date[:4],
+        description=description,
+        downloads=0,
+        source="NeoDB",
+        release_date=release_date,
+        chinese_title=chinese_title if chinese_title and chinese_title != title else "",
+        source_url=source_url,
+        wikidata_url="",
+        external_url=external_url,
+        media_type="music",
+        media_label="音乐",
+        release_word="发行",
+    )
+
+
+def _has_cjk(text):
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
+def _classic_game_translation_search_terms(title):
+    terms = [title]
+    cleaned = re.sub(r"\s*\([^)]*\)\s*", " ", title)
+    cleaned = " ".join(cleaned.split())
+    if cleaned and cleaned not in terms:
+        terms.append(cleaned)
+    return terms
+
+
+def _fetch_wikidata_chinese_title(title):
+    for search_term in _classic_game_translation_search_terms(title):
+        try:
+            response = requests.get(
+                WIKIDATA_API_URL,
+                params={
+                    "action": "wbsearchentities",
+                    "search": search_term,
+                    "language": "en",
+                    "uselang": "zh",
+                    "format": "json",
+                    "type": "item",
+                    "limit": "5",
+                },
+                headers=_wikidata_headers(),
+                timeout=8,
+            )
+        except requests.exceptions.RequestException as error:
+            print(f"Error fetching Wikidata Chinese title: {error}")
+            continue
+
+        if not response.ok:
+            continue
+
+        for result in response.json().get("search", []):
+            label = convert(_clean_hn_text(result.get("label"), 120), "zh-cn")
+            description = _clean_hn_text(result.get("description"), 160).lower()
+            if not label or not _has_cjk(label) or label == title:
+                continue
+            if "video game" not in description and "游戏" not in description:
+                continue
+
+            qid = result.get("id", "")
+            return label, WIKIDATA_ITEM_URL.format(qid=qid) if qid else ""
+    return "", ""
+
+
+def _with_wikidata_chinese_title(game):
+    if game.chinese_title:
+        return game
+
+    chinese_title, wikidata_url = _fetch_wikidata_chinese_title(game.title)
+    if not chinese_title:
+        return game
+
+    return ClassicGame(
+        identifier=game.identifier,
+        title=game.title,
+        creator=game.creator,
+        year=game.year,
+        description=game.description,
+        downloads=game.downloads,
+        source=game.source,
+        release_date=game.release_date,
+        chinese_title=chinese_title,
+        source_url=game.source_url,
+        wikidata_url=wikidata_url,
+        external_url=game.external_url,
+        media_type=game.media_type,
+        media_label=game.media_label,
+        release_word=game.release_word,
+    )
+
+
+def _is_classic_game_candidate(game):
+    title = game.title.lower()
+    identifier = game.identifier.lower()
+    blocked_words = (
+        " patch",
+        "patch ",
+        "trainer",
+        "walkthrough",
+        "manual",
+        "soundtrack",
+        "dosbox",
+        "driver",
+        "utility",
+        "level editor",
+        "map editor",
+        "music creator",
+    )
+    combined = f"{identifier} {title}"
+    return not any(word in combined for word in blocked_words)
+
+
+def _is_classic_chinese_book_candidate(book):
+    title = book.title.lower()
+    blocked_words = (
+        "杂志",
+        "期刊",
+        "报纸",
+        "广告",
+        "词典",
+        "辞典",
+        "字典",
+        "年鉴",
+        "报告",
+        "规则",
+        "指示",
+        "dictionary",
+        "magazine",
+        "newspaper",
+        "journal",
+        "catalog",
+        "manual",
+    )
+    if not _has_cjk(book.title) or any(word in title for word in blocked_words):
+        return False
+    if re.search(r"第\s*\d+\s*期", book.title):
+        return False
+    return True
+
+
+def _classic_game_search_params(query, rows, page=1):
+    return {
+        "q": query,
+        "fl[]": [
+            "identifier",
+            "title",
+            "creator",
+            "year",
+            "date",
+            "description",
+            "downloads",
+        ],
+        "rows": str(rows),
+        "page": str(page),
+        "output": "json",
+        "sort[]": "identifier asc",
+    }
+
+
+def _classic_chinese_book_search_params(query, rows, page=1):
+    params = _classic_game_search_params(query, rows, page)
+    params["sort[]"] = "downloads desc"
+    return params
+
+
+def _fetch_classic_game_page_count(query):
+    response = requests.get(
+        INTERNET_ARCHIVE_SEARCH_URL,
+        params=_classic_game_search_params(query, rows=0),
+        headers={"User-Agent": WIKIMEDIA_USER_AGENT},
+        timeout=10,
+    )
+    if not response.ok:
+        return 0
+
+    total = _parse_hn_int(response.json().get("response", {}).get("numFound"))
+    if total <= 0:
+        return 0
+    return ceil(total / CLASSIC_MEDIA_SEARCH_ROWS)
+
+
+def _fetch_classic_games(query, source, page):
+    response = requests.get(
+        INTERNET_ARCHIVE_SEARCH_URL,
+        params=_classic_game_search_params(query, CLASSIC_MEDIA_SEARCH_ROWS, page),
+        headers={"User-Agent": WIKIMEDIA_USER_AGENT},
+        timeout=10,
+    )
+    if not response.ok:
+        return []
+
+    games = []
+    for doc in response.json().get("response", {}).get("docs", []):
+        game = _classic_game_from_doc(doc, source)
+        if game is not None and _is_classic_game_candidate(game):
+            games.append(game)
+    return games
+
+
+def _fetch_classic_chinese_books(now, page):
+    query = CLASSIC_CHINESE_BOOK_SEARCH_TEMPLATE.format(
+        max_year=now.year - CLASSIC_MEDIA_MIN_AGE_YEARS
+    )
+    response = requests.get(
+        INTERNET_ARCHIVE_SEARCH_URL,
+        params=_classic_chinese_book_search_params(
+            query,
+            CLASSIC_MEDIA_SEARCH_ROWS,
+            page,
+        ),
+        headers={"User-Agent": WIKIMEDIA_USER_AGENT},
+        timeout=10,
+    )
+    if not response.ok:
+        return []
+
+    books = []
+    for doc in response.json().get("response", {}).get("docs", []):
+        book = _classic_chinese_book_from_doc(doc)
+        if book is not None and _is_classic_chinese_book_candidate(book):
+            books.append(book)
+    return books
+
+
+def _is_old_release(release_date, now):
+    if not release_date:
+        return False
+    try:
+        release_day = pendulum.parse(release_date)
+    except Exception:
+        return False
+    return release_day.year <= now.year - CLASSIC_MEDIA_MIN_AGE_YEARS
+
+
+def _fetch_neodb_trending_music():
+    try:
+        response = requests.get(
+            NEODB_TRENDING_MUSIC_URL,
+            headers=_neodb_headers(),
+            timeout=8,
+        )
+        if not response.ok:
+            return []
+        return response.json()
+    except requests.exceptions.RequestException as error:
+        print(f"Error fetching NeoDB music: {error}")
+        return []
+
+
+def _fetch_neodb_album(uuid):
+    try:
+        response = requests.get(
+            NEODB_ALBUM_API_URL.format(uuid=uuid),
+            headers=_neodb_headers(),
+            timeout=8,
+        )
+        if not response.ok:
+            return None
+        return response.json()
+    except requests.exceptions.RequestException as error:
+        print(f"Error fetching NeoDB album: {error}")
+        return None
+
+
+def _select_neodb_music(now, used_keys):
+    items = _fetch_neodb_trending_music()
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT + 3)
+    rng.shuffle(items)
+
+    for item in items[:20]:
+        uuid = _archive_field_text(item.get("uuid"))
+        if not uuid:
+            continue
+
+        album = _fetch_neodb_album(uuid) or item
+        music = _classic_music_from_neodb_item(album)
+        if music is None or music.key in used_keys:
+            continue
+        if _is_old_release(music.release_date, now):
+            return music
+    return None
+
+
+def _select_same_day_classic_media_release(now, used_keys, kind):
+    games = [
+        game
+        for game in _fetch_classic_media_releases(kind, now, now.month, now.day)
+        if game.key not in used_keys
+    ]
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT)
+    rng.shuffle(games)
+    if games:
+        return games[0]
+    return None
+
+
+def _select_other_day_classic_media_release(now, used_keys, kind):
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT + 1)
+    checked_dates = {(now.month, now.day)}
+    for _ in range(CLASSIC_MEDIA_RANDOM_DATE_ATTEMPTS):
+        month = rng.randint(1, 12)
+        day = rng.randint(1, 28)
+        if (month, day) in checked_dates:
+            continue
+        checked_dates.add((month, day))
+
+        games = [
+            game
+            for game in _fetch_classic_media_releases(kind, now, month, day)
+            if game.key not in used_keys
+        ]
+        rng.shuffle(games)
+        if games:
+            return games[0]
+    return None
+
+
+def _select_classic_game(now, used_keys):
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT)
+    searches = list(CLASSIC_GAME_SEARCHES)
+    rng.shuffle(searches)
+
+    for source, query in searches:
+        page_count = _fetch_classic_game_page_count(query)
+        if page_count <= 0:
+            continue
+
+        pages = list(range(1, page_count + 1))
+        rng.shuffle(pages)
+        for page in pages[:CLASSIC_MEDIA_PAGE_ATTEMPTS]:
+            games = [
+                game
+                for game in _fetch_classic_games(query, source, page)
+                if game.key not in used_keys
+            ]
+            rng.shuffle(games)
+            if games:
+                return games[0]
+    return None
+
+
+def _select_classic_chinese_book(now, used_keys):
+    query = CLASSIC_CHINESE_BOOK_SEARCH_TEMPLATE.format(
+        max_year=now.year - CLASSIC_MEDIA_MIN_AGE_YEARS
+    )
+    page_count = _fetch_classic_game_page_count(query)
+    if page_count <= 0:
+        return None
+
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT + 2)
+    pages = list(range(1, min(page_count, CLASSIC_CHINESE_BOOK_PAGE_LIMIT) + 1))
+    rng.shuffle(pages)
+    for page in pages[:CLASSIC_MEDIA_PAGE_ATTEMPTS]:
+        books = [
+            book
+            for book in _fetch_classic_chinese_books(now, page)
+            if book.key not in used_keys
+        ]
+        rng.shuffle(books)
+        if books:
+            return books[0]
+    return None
+
+
+def _format_release_age(release_date, now=None):
+    if not release_date:
+        return ""
+
+    try:
+        release_day = pendulum.parse(release_date)
+    except Exception:
+        return release_date
+
+    current_time = now or _now()
+    years_ago = current_time.year - release_day.year
+    if release_day.month == current_time.month and release_day.day == current_time.day:
+        return f"{release_day.to_date_string()}（{years_ago} 年前的今天）"
+    return f"{release_day.to_date_string()}（{years_ago} 年前）"
+
+
+def _classic_game_display_title(game):
+    if game.chinese_title and game.chinese_title != game.title:
+        return f"{game.chinese_title}（{game.title}）"
+    return game.title
+
+
+def _format_classic_game_intro(game, now=None):
+    lines = [
+        f"good old days：{game.media_label}",
+        "",
+        f"• [{_classic_game_display_title(game)}]({game.url})",
+    ]
+
+    meta_parts = [game.source]
+    if game.release_date:
+        meta_parts.append(_format_release_age(game.release_date, now))
+    elif game.year:
+        meta_parts.append(game.year)
+    if game.creator:
+        meta_parts.append(game.creator)
+    if game.downloads > 0:
+        meta_parts.append(f"{game.downloads} downloads")
+    lines.append(" / ".join(meta_parts))
+
+    if game.chinese_title and game.chinese_title != game.title:
+        lines.append(f"中文名：{game.chinese_title}")
+
+    if game.description:
+        lines.append(f"简介：{game.description}")
+    else:
+        lines.append(f"简介：Internet Archive 收录的{game.media_label}，可以在线打开。")
+
+    if game.source == "Wikidata":
+        lines.append(
+            f"Wikidata：[{game.identifier.removeprefix('wikidata-')}]({game.url})"
+        )
+    elif game.source == "NeoDB":
+        lines.append(
+            f"NeoDB：[{game.identifier.removeprefix('neodb-album-')}]({game.url})"
+        )
+    else:
+        lines.append(f"Archive：[{game.identifier}]({game.archive_url})")
+        if game.wikidata_url and game.chinese_title:
+            lines.append(f"中文名来源：[Wikidata]({game.wikidata_url})")
+    if game.external_url:
+        lines.append(
+            f"外部条目：[{_extract_domain(game.external_url)}]({game.external_url})"
+        )
+    return "\n".join(lines)
+
+
+def _select_classic_media_kind(now):
+    rng = _daily_rng(now, CLASSIC_MEDIA_RANDOM_SALT)
+    return rng.choice(CLASSIC_MEDIA_KINDS)
+
+
+def get_classic_media_intro():
+    try:
+        now = _now()
+        used_keys = _load_used_classic_media()
+        kind = _select_classic_media_kind(now)
+        if kind.get("neodb_only"):
+            game = _select_neodb_music(now, used_keys)
+        elif kind.get("archive_only"):
+            game = _select_classic_chinese_book(now, used_keys)
+        else:
+            game = _select_same_day_classic_media_release(now, used_keys, kind)
+            if game is None:
+                game = _select_other_day_classic_media_release(now, used_keys, kind)
+            if game is None:
+                game = (
+                    _select_classic_game(now, used_keys)
+                    if kind["key"] == "game"
+                    else None
+                )
+                if game is not None and kind["key"] == "game":
+                    game = _with_wikidata_chinese_title(game)
+        if game is None:
+            return ""
+
+        _save_used_classic_media(game.key)
+        return _format_classic_game_intro(game, now)
+    except Exception as error:
+        print(f"Error getting classic media: {error}")
+        return ""
+
+
+def get_classic_game_intro():
+    return get_classic_media_intro()
+
+
 def _extract_wiki_url(event):
     pages = event.get("pages") or []
     if not pages:
@@ -1523,13 +2408,13 @@ def _build_get_up_message_parts(now=None):
     city_info, city_name, _ = get_random_city()
     city_poster_path = _generate_city_poster(city_name) if city_name else ""
     city_map_path = _generate_cities_map(city_name) if city_name else ""
-    blog_article, blog_year = _get_blog_article_from_history_parts(current_time)
+    blog_article, _blog_year = _get_blog_article_from_history_parts(current_time)
     return GetUpMessageParts(
         is_get_up_early=_is_get_up_early(current_time),
         day_of_year=get_day_of_year(current_time),
         year_progress=get_year_progress(current_time),
         running_info=get_running_distance(),
-        history_today=get_hacker_news_history(blog_year),
+        history_today=get_classic_media_intro(),
         leetcode=get_daily_leetcode(),
         blog_article=blog_article,
         city_info=city_info,

@@ -18,6 +18,7 @@ STATE_FILES = [
     get_up.LEETCODE_HOT100_USED_FILE,
     get_up.BLOG_SITES_USED_FILE,
     get_up.HACKER_NEWS_USED_FILE,
+    get_up.CLASSIC_MEDIA_USED_FILE,
     get_up.CHINESE_CITIES_FILE,
     get_up.CITIES_USED_FILE,
     get_up.CITY_GEOCODE_DB,
@@ -109,10 +110,9 @@ def main():
         blog_article = run_component(
             "历史上的今天博客", get_up.get_blog_article_from_history
         )
-        blog_year = get_up._extract_blog_year_from_text(blog_article)
         history_today = run_component(
-            "HN 历史今日",
-            lambda: get_up.get_hacker_news_history(blog_year),
+            "good old days",
+            get_up.get_classic_media_intro,
         )
         leetcode = run_component("今日 LeetCode", get_up.get_daily_leetcode)
         city_info_result = run_component("今日城市", get_up.get_random_city)
