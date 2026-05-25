@@ -92,3 +92,4 @@ valid-parentheses
 ti-huan-kong-ge-lcof
 check-if-array-is-sorted-and-rotated
 kth-missing-positive-number
+count-the-number-of-special-characters-i
