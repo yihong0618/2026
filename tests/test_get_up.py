@@ -212,6 +212,45 @@ class GetUpPosterTests(unittest.TestCase):
 
 
 class GetUpMapTests(unittest.TestCase):
+    def test_render_cities_map_draws_offset_labels_without_point_markers(self):
+        from matplotlib.axes import Axes
+
+        original_script_dir = get_up.SCRIPT_DIR
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                get_up.SCRIPT_DIR = Path(tmpdir)
+                city_coords = [
+                    ("北京", 39.9042, 116.4074),
+                    ("上海", 31.2304, 121.4737),
+                    ("百色", 23.9054, 106.6149),
+                ]
+                with (
+                    mock.patch.object(get_up, "_load_world_geodata", return_value=None),
+                    mock.patch.object(
+                        get_up,
+                        "_compute_label_offsets",
+                        return_value=[(9, 9), (-9, 9), (12, -12)],
+                    ) as compute_offsets,
+                    mock.patch.object(Axes, "scatter", autospec=True) as scatter,
+                ):
+                    result = get_up._render_cities_map(city_coords, today_city="百色")
+
+                self.assertEqual(
+                    result,
+                    str(Path(tmpdir) / get_up.CITY_POSTERS_DIR / get_up.CITY_MAP_FILE),
+                )
+                self.assertTrue(Path(result).exists())
+                scatter.assert_not_called()
+                compute_offsets.assert_called_once()
+                args, kwargs = compute_offsets.call_args
+                self.assertEqual(args[0], [116.4074, 121.4737, 106.6149])
+                self.assertEqual(args[1], [39.9042, 31.2304, 23.9054])
+                self.assertEqual(args[2], ["北京", "上海", "百色"])
+                self.assertEqual(kwargs["fontsize"], 8)
+                self.assertEqual(kwargs["priority_labels"], ("百色",))
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
     def test_compute_label_offsets_separates_dense_labels(self):
         from matplotlib.backends.backend_agg import FigureCanvasAgg
         from matplotlib.figure import Figure

@@ -970,9 +970,6 @@ def _render_cities_map(city_coords, today_city=""):
 
     today_city = today_city.strip()
 
-    other_coords = [c for c in city_coords if c[0] != today_city]
-    today_coords = [c for c in city_coords if c[0] == today_city]
-
     all_lons = [c[2] for c in city_coords]
     all_lats = [c[1] for c in city_coords]
 
@@ -1010,32 +1007,6 @@ def _render_cities_map(city_coords, today_city=""):
             zorder=1,
         )
 
-    # Other cities
-    if other_coords:
-        ax.scatter(
-            [c[2] for c in other_coords],
-            [c[1] for c in other_coords],
-            s=62,
-            c="#E66A4F",
-            alpha=0.92,
-            edgecolors="#FFFFFF",
-            linewidths=1.2,
-            zorder=3,
-        )
-
-    # Today city
-    if today_coords:
-        ax.scatter(
-            [c[2] for c in today_coords],
-            [c[1] for c in today_coords],
-            s=210,
-            c="#F4A261",
-            alpha=0.95,
-            edgecolors="#214C5C",
-            linewidths=2.2,
-            zorder=5,
-        )
-
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlim(view_min_lon, view_max_lon)
     ax.set_ylim(view_min_lat, view_max_lat)
@@ -1045,10 +1016,10 @@ def _render_cities_map(city_coords, today_city=""):
     lons = [c[2] for c in city_coords]
     lats = [c[1] for c in city_coords]
     labels = [c[0] for c in city_coords]
-
     label_offsets = _compute_label_offsets(
         lons, lats, labels, ax, fontsize=8, priority_labels=(today_city,)
     )
+
     for lon, lat, label, offset in zip(lons, lats, labels, label_offsets):
         is_today = label == today_city
         ha = "left" if offset[0] >= 0 else "right"
@@ -1063,7 +1034,9 @@ def _render_cities_map(city_coords, today_city=""):
                 shrinkA=2,
                 shrinkB=3,
             )
-        ann = dict(
+        ax.annotate(
+            label,
+            (lon, lat),
             textcoords="offset points",
             xytext=offset,
             fontsize=10 if is_today else 8,
@@ -1081,7 +1054,6 @@ def _render_cities_map(city_coords, today_city=""):
             arrowprops=arrowprops,
             zorder=6 if is_today else 4,
         )
-        ax.annotate(label, (lon, lat), **ann)
 
     ax.grid(color="#CBD5E1", linestyle="--", linewidth=0.55, alpha=0.35, zorder=0)
     title = (
