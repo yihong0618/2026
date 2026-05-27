@@ -50,7 +50,6 @@ LEETCODE_USED_FILE = "data/leetcode_used.txt"
 LEETCODE_HOT100_FILE = "data/leetcode_hot100.txt"
 LEETCODE_HOT100_USED_FILE = "data/leetcode_hot100_used.txt"
 BLOG_SITES_USED_FILE = "data/blog_sites_used.txt"
-HACKER_NEWS_USED_FILE = "data/hacker_news_used.txt"
 CLASSIC_MEDIA_USED_FILE = "data/classic_media_used.txt"
 CHINESE_CITIES_FILE = "data/chinese_cities.txt"
 CITIES_USED_FILE = "data/cities_used.txt"
@@ -75,11 +74,6 @@ RUN_DATA_URL = (
     "https://github.com/yihong0618/run/raw/refs/heads/master/run_page/data.parquet"
 )
 WIKIMEDIA_USER_AGENT = "GetUpBot/1.0 (https://github.com/yihong0618/2026)"
-HACKER_NEWS_SEARCH_URL = "https://hn.algolia.com/api/v1/search_by_date"
-HACKER_NEWS_ITEM_URL = "https://news.ycombinator.com/item?id={object_id}"
-HACKER_NEWS_START_YEAR = 2007
-HACKER_NEWS_STORIES_PER_PAGE = 1000
-HACKER_NEWS_TOP_LIMIT = 10
 INTERNET_ARCHIVE_SEARCH_URL = "https://archive.org/advancedsearch.php"
 INTERNET_ARCHIVE_ITEM_URL = "https://archive.org/details/{identifier}"
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
@@ -198,29 +192,6 @@ class LeetCodeProblem:
     @property
     def url(self):
         return LEETCODE_BASE_URL.format(slug=self.slug)
-
-
-@dataclass(frozen=True)
-class HackerNewsStory:
-    object_id: str
-    title: str
-    url: str
-    points: int
-    num_comments: int
-    author: str
-    created_at: str
-
-    @property
-    def hn_url(self):
-        return HACKER_NEWS_ITEM_URL.format(object_id=self.object_id)
-
-    @property
-    def link_url(self):
-        return self.url or self.hn_url
-
-    @property
-    def key(self):
-        return f"hn:{self.object_id}"
 
 
 @dataclass(frozen=True)
@@ -1084,7 +1055,7 @@ def _render_cities_map(city_coords, today_city=""):
     return str(output_path)
 
 
-def _clean_hn_text(value, max_length=None):
+def _clean_text(value, max_length=None):
     if not value:
         return ""
 
@@ -1104,157 +1075,13 @@ def _clean_hn_text(value, max_length=None):
     return truncated.rstrip() + "..."
 
 
-def _load_used_hacker_news():
-    return set(_read_non_empty_lines(_data_file_path(HACKER_NEWS_USED_FILE)))
-
-
-def _save_used_hacker_news(key):
-    if key:
-        _append_line(_data_file_path(HACKER_NEWS_USED_FILE), key)
-
-
-def _parse_hn_int(value):
+def _parse_int(value):
     try:
         if value is None:
             return 0
         return int(value)
     except (TypeError, ValueError):
         return 0
-
-
-def _hn_story_from_hit(hit):
-    object_id = str(hit.get("objectID") or hit.get("id") or "").strip()
-    title = _clean_hn_text(hit.get("title") or hit.get("story_title") or "", 260)
-    if not object_id or not title:
-        return None
-
-    return HackerNewsStory(
-        object_id=object_id,
-        title=title,
-        url=(hit.get("url") or "").strip(),
-        points=_parse_hn_int(hit.get("points")),
-        num_comments=_parse_hn_int(hit.get("num_comments")),
-        author=_clean_hn_text(hit.get("author", ""), 80),
-        created_at=hit.get("created_at", ""),
-    )
-
-
-def _valid_hn_date(year, month, day):
-    try:
-        pendulum.datetime(year, month, day, tz="UTC")
-        return True
-    except ValueError:
-        return False
-
-
-def _hn_day_timestamps(year, month, day):
-    start = pendulum.datetime(year, month, day, tz="UTC")
-    end = start.add(days=1)
-    return int(start.timestamp()), int(end.timestamp())
-
-
-def _hacker_news_candidate_years(now):
-    month = now.month
-    day = now.day
-    years = [
-        year
-        for year in range(HACKER_NEWS_START_YEAR, now.year)
-        if _valid_hn_date(year, month, day)
-    ]
-    rng = _daily_rng(now, HACKER_NEWS_RANDOM_SALT)
-    rng.shuffle(years)
-    return years
-
-
-def _fetch_hacker_news_top_stories_for_date(year, month, day):
-    start_ts, end_ts = _hn_day_timestamps(year, month, day)
-    response = requests.get(
-        HACKER_NEWS_SEARCH_URL,
-        params={
-            "tags": "story",
-            "hitsPerPage": str(HACKER_NEWS_STORIES_PER_PAGE),
-            "numericFilters": f"created_at_i>={start_ts},created_at_i<{end_ts}",
-        },
-        timeout=10,
-    )
-    if not response.ok:
-        return []
-
-    stories = []
-    seen_ids = set()
-    for hit in response.json().get("hits", []):
-        story = _hn_story_from_hit(hit)
-        if story is None or story.object_id in seen_ids:
-            continue
-        seen_ids.add(story.object_id)
-        stories.append(story)
-
-    stories.sort(key=lambda story: (story.points, story.num_comments), reverse=True)
-    return stories[:HACKER_NEWS_TOP_LIMIT]
-
-
-def _is_hacker_news_story_link_available(story):
-    return _check_link_available(story.link_url)
-
-
-def _select_hacker_news_history_story(now, used_keys, target_year=None):
-    rng = _daily_rng(now, HACKER_NEWS_RANDOM_SALT)
-
-    if target_year is None:
-        years = _hacker_news_candidate_years(now)
-    elif HACKER_NEWS_START_YEAR <= target_year < now.year and _valid_hn_date(
-        target_year, now.month, now.day
-    ):
-        years = [target_year]
-    else:
-        years = []
-
-    for year in years:
-        stories = _fetch_hacker_news_top_stories_for_date(year, now.month, now.day)
-        available = [story for story in stories if story.key not in used_keys]
-        rng.shuffle(available)
-        for story in available:
-            if _is_hacker_news_story_link_available(story):
-                return year, story
-            print(f"Skip unavailable HN story link: {story.link_url}")
-    return None, None
-
-
-def _format_hacker_news_history_story(year, month, day, story):
-    date = f"{year}-{month:02d}-{day:02d}"
-    title = _clean_hn_text(story.title, 260)
-    lines = [
-        f"HN 历史今日（{date}）：",
-        "",
-        f"• {title}",
-    ]
-
-    meta_parts = [f"{story.points} points", f"{story.num_comments} comments"]
-    if story.author:
-        meta_parts.append(f"by {story.author}")
-    lines.append(" / ".join(meta_parts))
-    lines.append(f"原文：[{title}]({story.link_url})")
-    lines.append(f"HN 讨论：[{story.object_id}]({story.hn_url})")
-    return "\n".join(lines)
-
-
-def get_hacker_news_history(target_year=None):
-    try:
-        now = _now()
-        used_keys = _load_used_hacker_news()
-        year, story = _select_hacker_news_history_story(
-            now,
-            used_keys,
-            target_year=target_year,
-        )
-        if story is None:
-            return ""
-
-        _save_used_hacker_news(story.key)
-        return _format_hacker_news_history_story(year, now.month, now.day, story)
-    except Exception as error:
-        print(f"Error getting Hacker News history: {error}")
-        return ""
 
 
 def _load_used_classic_media():
@@ -1293,7 +1120,7 @@ def _wikidata_qid(value):
 def _preferred_text(*values, zh=False):
     for value in values:
         if value:
-            text = _clean_hn_text(value, 240)
+            text = _clean_text(value, 240)
             if text:
                 return convert(text, "zh-cn") if zh else text
     return ""
@@ -1425,7 +1252,7 @@ def _archive_year_text(value):
 
 
 def _clean_classic_game_description(value, max_length=220):
-    text = _clean_hn_text(_archive_field_text(value), max_length=900)
+    text = _clean_text(_archive_field_text(value), max_length=900)
     if not text:
         return ""
 
@@ -1447,12 +1274,12 @@ def _clean_classic_game_description(value, max_length=220):
     if any(marker in text[:350] for marker in control_markers):
         return ""
 
-    return _clean_hn_text(text, max_length)
+    return _clean_text(text, max_length)
 
 
 def _classic_game_from_doc(doc, source):
     identifier = _archive_field_text(doc.get("identifier"))
-    title = _clean_hn_text(doc.get("title"), 180).replace("[", "(").replace("]", ")")
+    title = _clean_text(doc.get("title"), 180).replace("[", "(").replace("]", ")")
     if not identifier or not title:
         return None
 
@@ -1460,10 +1287,10 @@ def _classic_game_from_doc(doc, source):
     return ClassicGame(
         identifier=identifier,
         title=title,
-        creator=_clean_hn_text(doc.get("creator"), 120),
+        creator=_clean_text(doc.get("creator"), 120),
         year=year,
         description=_clean_classic_game_description(doc.get("description")),
-        downloads=_parse_hn_int(doc.get("downloads")),
+        downloads=_parse_int(doc.get("downloads")),
         source=source,
     )
 
@@ -1471,7 +1298,7 @@ def _classic_game_from_doc(doc, source):
 def _classic_chinese_book_from_doc(doc):
     identifier = _archive_field_text(doc.get("identifier"))
     title = convert(
-        _clean_hn_text(doc.get("title"), 180).replace("[", "(").replace("]", ")"),
+        _clean_text(doc.get("title"), 180).replace("[", "(").replace("]", ")"),
         "zh-cn",
     )
     if not identifier or not title or not _has_cjk(title):
@@ -1481,12 +1308,12 @@ def _classic_chinese_book_from_doc(doc):
     return ClassicGame(
         identifier=identifier,
         title=title,
-        creator=convert(_clean_hn_text(doc.get("creator"), 120), "zh-cn"),
+        creator=convert(_clean_text(doc.get("creator"), 120), "zh-cn"),
         year=year,
         description=convert(
             _clean_classic_game_description(doc.get("description")), "zh-cn"
         ),
-        downloads=_parse_hn_int(doc.get("downloads")),
+        downloads=_parse_int(doc.get("downloads")),
         source="Internet Archive 中文文本",
         media_type="book",
         media_label="老书",
@@ -1650,8 +1477,8 @@ def _fetch_wikidata_chinese_title(title):
             continue
 
         for result in response.json().get("search", []):
-            label = convert(_clean_hn_text(result.get("label"), 120), "zh-cn")
-            description = _clean_hn_text(result.get("description"), 160).lower()
+            label = convert(_clean_text(result.get("label"), 120), "zh-cn")
+            description = _clean_text(result.get("description"), 160).lower()
             if not label or not _has_cjk(label) or label == title:
                 continue
             if "video game" not in description and "游戏" not in description:
@@ -1773,7 +1600,7 @@ def _fetch_classic_game_page_count(query):
     if not response.ok:
         return 0
 
-    total = _parse_hn_int(response.json().get("response", {}).get("numFound"))
+    total = _parse_int(response.json().get("response", {}).get("numFound"))
     if total <= 0:
         return 0
     return ceil(total / CLASSIC_MEDIA_SEARCH_ROWS)
