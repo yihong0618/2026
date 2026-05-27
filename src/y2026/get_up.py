@@ -2074,16 +2074,13 @@ def _format_classic_game_intro(game, now=None):
             f"Wikidata：[{game.identifier.removeprefix('wikidata-')}]({game.url})"
         )
     elif game.source == "NeoDB":
-        neodb_id = game.identifier.removeprefix(f"neodb-{game.media_type}-")
-        lines.append(f"NeoDB：[{neodb_id}]({game.url})")
+        lines.append(f"[NeoDB]({game.url})")
     else:
         lines.append(f"Archive：[{game.identifier}]({game.archive_url})")
         if game.wikidata_url and game.chinese_title:
             lines.append(f"中文名来源：[Wikidata]({game.wikidata_url})")
     if game.external_url:
-        lines.append(
-            f"外部条目：[{_extract_domain(game.external_url)}]({game.external_url})"
-        )
+        lines.append(f"[{_extract_domain(game.external_url)}]({game.external_url})")
     return "\n".join(lines)
 
 

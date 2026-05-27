@@ -652,9 +652,9 @@ class GetUpClassicGameTests(unittest.TestCase):
 
                 self.assertIn("good old days：音乐", result)
                 self.assertIn("2007-10-10（19 年前）", result)
-                self.assertIn("NeoDB：[abc](https://neodb.social/album/abc)", result)
+                self.assertIn("[NeoDB](https://neodb.social/album/abc)", result)
                 self.assertIn(
-                    "外部条目：[music.douban.com](https://music.douban.com/subject/2278148/)",
+                    "[music.douban.com](https://music.douban.com/subject/2278148/)",
                     result,
                 )
                 select_neodb.assert_called_once()
