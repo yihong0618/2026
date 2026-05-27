@@ -34,3 +34,4 @@ perfect-squares
 valid-parentheses
 lowest-common-ancestor-of-a-binary-tree
 next-permutation
+convert-sorted-array-to-binary-search-tree
