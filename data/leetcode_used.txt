@@ -94,3 +94,4 @@ check-if-array-is-sorted-and-rotated
 kth-missing-positive-number
 count-the-number-of-special-characters-i
 minimum-element-after-replacement-with-digit-sum
+find-closest-person
