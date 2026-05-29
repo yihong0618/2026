@@ -212,6 +212,20 @@ class GetUpPosterTests(unittest.TestCase):
 
 
 class GetUpMapTests(unittest.TestCase):
+    def test_filter_china_admin1_keeps_taiwan_records(self):
+        import pandas as pd
+
+        admin1 = pd.DataFrame(
+            {
+                "adm0_a3": ["CHN", "TWN", "JPN"],
+                "admin": ["China", "Taiwan", "Japan"],
+            }
+        )
+
+        china = get_up._filter_china_admin1(admin1)
+
+        self.assertEqual(china["adm0_a3"].tolist(), ["CHN", "TWN"])
+
     def test_render_cities_map_draws_city_points_and_offset_labels(self):
         from matplotlib.axes import Axes
 

@@ -718,10 +718,11 @@ def _filter_china_admin1(admin1):
     masks = []
     for column in ("adm0_a3", "adm0_a3_us", "gu_a3"):
         if column in admin1.columns:
-            masks.append(admin1[column].astype(str).str.upper().eq("CHN"))
+            masks.append(admin1[column].astype(str).str.upper().isin(("CHN", "TWN")))
     for column in ("admin", "geonunit", "sovereignt"):
         if column in admin1.columns:
-            masks.append(admin1[column].astype(str).str.lower().eq("china"))
+            normalized = admin1[column].astype(str).str.lower()
+            masks.append(normalized.isin(("china", "taiwan")))
 
     if not masks:
         return admin1
