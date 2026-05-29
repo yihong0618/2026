@@ -212,7 +212,7 @@ class GetUpPosterTests(unittest.TestCase):
 
 
 class GetUpMapTests(unittest.TestCase):
-    def test_render_cities_map_draws_offset_labels_without_point_markers(self):
+    def test_render_cities_map_draws_city_points_and_offset_labels(self):
         from matplotlib.axes import Axes
 
         original_script_dir = get_up.SCRIPT_DIR
@@ -225,6 +225,7 @@ class GetUpMapTests(unittest.TestCase):
                     ("百色", 23.9054, 106.6149),
                 ]
                 with (
+                    mock.patch.object(get_up, "_load_china_geodata", return_value=None),
                     mock.patch.object(get_up, "_load_world_geodata", return_value=None),
                     mock.patch.object(
                         get_up,
@@ -240,7 +241,7 @@ class GetUpMapTests(unittest.TestCase):
                     str(Path(tmpdir) / get_up.CITY_POSTERS_DIR / get_up.CITY_MAP_FILE),
                 )
                 self.assertTrue(Path(result).exists())
-                scatter.assert_not_called()
+                self.assertEqual(scatter.call_count, 2)
                 compute_offsets.assert_called_once()
                 args, kwargs = compute_offsets.call_args
                 self.assertEqual(args[0], [116.4074, 121.4737, 106.6149])
