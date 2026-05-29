@@ -683,6 +683,12 @@ _NATURALEARTH_URL = (
     "https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip"
 )
 _WORLD_CACHE_FILE = _data_file_path("data/ne_110m_countries.gpkg")
+_NATURALEARTH_ADMIN1_URL = (
+    "https://naturalearth.s3.amazonaws.com/10m_cultural/"
+    "ne_10m_admin_1_states_provinces.zip"
+)
+_CHINA_ADMIN1_CACHE_FILE = _data_file_path("data/ne_10m_china_admin1.gpkg")
+_CHINA_VIEW_BOUNDS = (73.0, 135.5, 15.0, 54.5)
 
 
 def _load_world_geodata():
@@ -702,6 +708,52 @@ def _load_world_geodata():
         return world
     except Exception as error:
         print(f"Error loading world geodata: {error}")
+        return None
+
+
+def _filter_china_admin1(admin1):
+    if admin1 is None or getattr(admin1, "empty", True):
+        return None
+
+    masks = []
+    for column in ("adm0_a3", "adm0_a3_us", "gu_a3"):
+        if column in admin1.columns:
+            masks.append(admin1[column].astype(str).str.upper().isin(("CHN", "TWN")))
+    for column in ("admin", "geonunit", "sovereignt"):
+        if column in admin1.columns:
+            normalized = admin1[column].astype(str).str.lower()
+            masks.append(normalized.isin(("china", "taiwan")))
+
+    if not masks:
+        return admin1
+
+    mask = masks[0]
+    for item in masks[1:]:
+        mask = mask | item
+    china = admin1[mask]
+    return None if getattr(china, "empty", True) else china
+
+
+def _load_china_geodata():
+    try:
+        import geopandas as gpd
+    except ImportError:
+        return None
+    if _CHINA_ADMIN1_CACHE_FILE.exists():
+        try:
+            return gpd.read_file(str(_CHINA_ADMIN1_CACHE_FILE))
+        except Exception:
+            pass
+    try:
+        admin1 = gpd.read_file(_NATURALEARTH_ADMIN1_URL)
+        china = _filter_china_admin1(admin1)
+        if china is None:
+            return None
+        _CHINA_ADMIN1_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        china.to_file(str(_CHINA_ADMIN1_CACHE_FILE), driver="GPKG")
+        return china
+    except Exception as error:
+        print(f"Error loading China geodata: {error}")
         return None
 
 
@@ -941,27 +993,39 @@ def _render_cities_map(city_coords, today_city=""):
 
     today_city = today_city.strip()
 
-    all_lons = [c[2] for c in city_coords]
-    all_lats = [c[1] for c in city_coords]
+    lons = [c[2] for c in city_coords]
+    lats = [c[1] for c in city_coords]
+    labels = [c[0] for c in city_coords]
 
-    min_lon, max_lon = min(all_lons), max(all_lons)
-    min_lat, max_lat = min(all_lats), max(all_lats)
-    pad_lon = max((max_lon - min_lon) * 0.15, 4)
-    pad_lat = max((max_lat - min_lat) * 0.15, 3)
-    view_min_lon = max(70, min_lon - pad_lon)
-    view_max_lon = min(140, max_lon + pad_lon)
-    view_min_lat = max(10, min_lat - pad_lat)
-    view_max_lat = min(55, max_lat + pad_lat)
-
-    world = _load_world_geodata()
+    china = _load_china_geodata()
+    world = None if china is not None else _load_world_geodata()
+    view_min_lon, view_max_lon, view_min_lat, view_max_lat = _CHINA_VIEW_BOUNDS
 
     fig = Figure(figsize=(13.5, 8.8), dpi=160)
-    fig.set_facecolor("#F6F8FB")
+    fig.set_facecolor("#F7F3EA")
     canvas = FigureCanvasAgg(fig)
     ax = fig.subplots(1, 1)
-    ax.set_facecolor("#DCECF8")
+    ax.set_facecolor("#D8EAF3")
 
-    if world is not None:
+    if china is not None:
+        china.plot(
+            ax=ax,
+            color="#F3E8D0",
+            edgecolor="#D2B98D",
+            linewidth=0.7,
+            zorder=2,
+        )
+        try:
+            china.dissolve().boundary.plot(
+                ax=ax,
+                color="#8B6F47",
+                linewidth=1.15,
+                zorder=3,
+            )
+        except Exception:
+            pass
+
+    if china is None and world is not None:
         try:
             world_clipped = world.cx[
                 view_min_lon:view_max_lon, view_min_lat:view_max_lat
@@ -972,9 +1036,9 @@ def _render_cities_map(city_coords, today_city=""):
             world_clipped = world
         world_clipped.plot(
             ax=ax,
-            color="#F1EEE6",
-            edgecolor="#AEB8C2",
-            linewidth=0.55,
+            color="#F3E8D0",
+            edgecolor="#C8B692",
+            linewidth=0.6,
             zorder=1,
         )
 
@@ -984,9 +1048,43 @@ def _render_cities_map(city_coords, today_city=""):
     ax.margins(0)
     canvas.draw()
 
-    lons = [c[2] for c in city_coords]
-    lats = [c[1] for c in city_coords]
-    labels = [c[0] for c in city_coords]
+    regular_lons = []
+    regular_lats = []
+    today_lons = []
+    today_lats = []
+    for lon, lat, label in zip(lons, lats, labels):
+        if label == today_city:
+            today_lons.append(lon)
+            today_lats.append(lat)
+        else:
+            regular_lons.append(lon)
+            regular_lats.append(lat)
+
+    if regular_lons:
+        ax.scatter(
+            regular_lons,
+            regular_lats,
+            s=18,
+            marker="o",
+            color="#2563EB",
+            edgecolors="white",
+            linewidths=0.8,
+            alpha=0.9,
+            zorder=5,
+        )
+    if today_lons:
+        ax.scatter(
+            today_lons,
+            today_lats,
+            s=72,
+            marker="o",
+            color="#F97316",
+            edgecolors="white",
+            linewidths=1.5,
+            alpha=1.0,
+            zorder=7,
+        )
+
     label_offsets = _compute_label_offsets(
         lons, lats, labels, ax, fontsize=8, priority_labels=(today_city,)
     )
@@ -1010,23 +1108,22 @@ def _render_cities_map(city_coords, today_city=""):
             (lon, lat),
             textcoords="offset points",
             xytext=offset,
-            fontsize=10 if is_today else 8,
+            fontsize=10 if is_today else 8.5,
             fontweight="bold" if is_today else "normal",
-            color="#1F2937" if is_today else "#264653",
+            color="#3F2F1B" if is_today else "#334155",
             ha=ha,
             va="center",
             bbox=dict(
                 boxstyle="round,pad=0.34" if is_today else "round,pad=0.24",
-                facecolor="#FEF3C7" if is_today else "white",
-                alpha=0.98 if is_today else 0.88,
-                edgecolor="#F59E0B" if is_today else "#A8B0BA",
+                facecolor="#FFE8B7" if is_today else "#FFFBF3",
+                alpha=0.98 if is_today else 0.9,
+                edgecolor="#F97316" if is_today else "#C9B894",
                 linewidth=1.2 if is_today else 0.8,
             ),
             arrowprops=arrowprops,
             zorder=6 if is_today else 4,
         )
 
-    ax.grid(color="#CBD5E1", linestyle="--", linewidth=0.55, alpha=0.35, zorder=0)
     title = (
         f"已探索城市地图（{len(city_coords)} 个城市）"
         if not today_city
@@ -1041,11 +1138,10 @@ def _render_cities_map(city_coords, today_city=""):
     )
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.tick_params(labelsize=8, colors="#64748B", length=0)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#CBD5E1")
-    ax.spines["bottom"].set_color("#CBD5E1")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
 
     fig.tight_layout(pad=1.0)
     output_dir = SCRIPT_DIR / CITY_POSTERS_DIR
