@@ -2429,6 +2429,17 @@ def _format_running_line(label, result):
     return f"• {label}没跑"
 
 
+def _running_month_summary_period(now):
+    if now.day == 1:
+        return (
+            "上个月",
+            now.subtract(months=1).start_of("month"),
+            now.start_of("month"),
+        )
+
+    return "本月", now.start_of("month"), now.add(days=1)
+
+
 def get_running_distance():
     try:
         response = requests.get(RUN_DATA_URL)
@@ -2442,6 +2453,7 @@ def get_running_distance():
             now = _now()
             yesterday = now.subtract(days=1)
             tomorrow = now.add(days=1)
+            month_label, month_start, month_end = _running_month_summary_period(now)
 
             with duckdb.connect() as conn:
                 yesterday_result = _query_running_summary(
@@ -2453,8 +2465,8 @@ def get_running_distance():
                     conn,
                     temp_file.name,
                     (
-                        f"start_date_local >= '{now.start_of('month').to_date_string()}' "
-                        f"AND start_date_local < '{tomorrow.to_date_string()}'"
+                        f"start_date_local >= '{month_start.to_date_string()}' "
+                        f"AND start_date_local < '{month_end.to_date_string()}'"
                     ),
                 )
                 year_result = _query_running_summary(
@@ -2468,7 +2480,7 @@ def get_running_distance():
 
         running_info_parts = [
             _format_running_line("昨天", yesterday_result),
-            _format_running_line("本月", month_result),
+            _format_running_line(month_label, month_result),
             _format_running_line("今年", year_result),
         ]
         return "Run：\n\n" + "\n".join(running_info_parts)

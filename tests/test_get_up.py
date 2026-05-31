@@ -84,6 +84,31 @@ class GetUpTelegramTests(unittest.TestCase):
         self.assertEqual(bot.calls[1][3]["parse_mode"], "MarkdownV2")
 
 
+class GetUpRunningTests(unittest.TestCase):
+    def test_running_distance_uses_previous_month_on_first_day(self):
+        response = mock.Mock(ok=True, content=b"parquet")
+        now = pendulum.datetime(2026, 6, 1, 7, tz=get_up.TIMEZONE)
+
+        with (
+            mock.patch.object(get_up.requests, "get", return_value=response),
+            mock.patch.object(get_up, "_now", return_value=now),
+            mock.patch.object(
+                get_up,
+                "_query_running_summary",
+                side_effect=[(1, 5.0), (8, 42.5), (20, 180.0)],
+            ) as query_summary,
+        ):
+            result = get_up.get_running_distance()
+
+        self.assertIn("• 昨天跑了 5.0 公里", result)
+        self.assertIn("• 上个月跑了 42.5 公里", result)
+        self.assertNotIn("• 本月", result)
+        self.assertEqual(
+            query_summary.call_args_list[1].args[2],
+            "start_date_local >= '2026-05-01' AND start_date_local < '2026-06-01'",
+        )
+
+
 class GetUpPosterTests(unittest.TestCase):
     def test_resolve_city_poster_font_prefers_local_fonts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
