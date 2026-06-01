@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 get-up = "y2026.get_up:cli"
 make-city-video = "y2026.make_video:main"
+weekly-tg-summary = "y2026.weekly_tg_summary:cli"
 
 [build-system]
 requires = ["hatchling"]

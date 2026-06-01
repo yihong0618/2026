@@ -1,4 +1,4 @@
-.PHONY: help sync test online-test lint format type-check video
+.PHONY: help sync test online-test lint format type-check video weekly-summary
 
 help:
 	@printf "Available targets:\n"
@@ -9,6 +9,7 @@ help:
 	@printf "  format       Format and autofix source and tests\n"
 	@printf "  type-check   Run mypy\n"
 	@printf "  video        Build the city-poster video\n"
+	@printf "  weekly-summary  Build Telegram weekly-summary draft\n"
 
 sync:
 	uv sync --all-groups
@@ -32,3 +33,6 @@ type-check:
 
 video:
 	uv run make-city-video
+
+weekly-summary:
+	uv run weekly-tg-summary $(ARGS)
