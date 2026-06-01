@@ -97,3 +97,4 @@ minimum-element-after-replacement-with-digit-sum
 find-closest-person
 maximum-enemy-forts-that-can-be-captured
 minimum-cost-of-buying-candies-with-discount
+earliest-finish-time-for-land-and-water-rides-i
