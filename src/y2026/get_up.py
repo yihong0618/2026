@@ -180,6 +180,12 @@ CITY_POSTER_RETRY_DELAY_SECONDS = 2
 _NOMINATIM_LOCK = threading.Lock()
 _LAST_NOMINATIM_REQUEST_AT = 0.0
 _NOMINATIM_MIN_INTERVAL = 1.1
+CITY_CENTER_COORD_OVERRIDES = {
+    # Nominatim ranks the prefecture boundary centroid first for Dandong, but
+    # the city poster should be centered on the urban place node.
+    "丹东": (40.1237658, 124.3821748),
+}
+_CITY_GEOCODE_PLACE_TYPES = {"city", "town", "municipality"}
 
 
 @dataclass(frozen=True)
@@ -636,14 +642,72 @@ def _set_cached_geocode(city, lat, lon):
         print(f"Error caching geocode: {error}")
 
 
+def _get_city_center_coord_override(city):
+    name = city.strip()
+    if not name:
+        return None
+
+    candidates = [name]
+    if name.endswith("市"):
+        candidates.append(name[:-1])
+    else:
+        candidates.append(f"{name}市")
+
+    for candidate in candidates:
+        coord = CITY_CENTER_COORD_OVERRIDES.get(candidate)
+        if coord is not None:
+            return coord
+    return None
+
+
+def _geocode_result_priority(result):
+    class_name = str(result.get("class", "")).lower()
+    place_type = str(result.get("type", "")).lower()
+    address_type = str(result.get("addresstype", "")).lower()
+
+    if class_name == "place" and place_type in _CITY_GEOCODE_PLACE_TYPES:
+        return 0
+    if address_type in _CITY_GEOCODE_PLACE_TYPES:
+        return 1
+    if class_name == "place":
+        return 2
+    if address_type in {"district", "county", "region"}:
+        return 3
+    if class_name == "boundary" and place_type == "administrative":
+        return 4
+    return 5
+
+
+def _select_geocode_result(results):
+    candidates = []
+    for index, result in enumerate(results):
+        try:
+            lat = float(result["lat"])
+            lon = float(result["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        candidates.append((_geocode_result_priority(result), index, lat, lon))
+
+    if not candidates:
+        return None
+
+    priority, _, lat, lon = min(candidates)
+    return (priority, (lat, lon))
+
+
 def _geocode_city(city):
     city = city.strip()
     if not city:
         return None
+    override = _get_city_center_coord_override(city)
+    if override is not None:
+        return override
     cached = _get_cached_geocode(city)
     if cached:
         return cached
     queries = [f"{city}市, 中国", f"{city}市", city]
+    fallback_coord = None
+    fallback_priority = float("inf")
     for query in queries:
         try:
             global _LAST_NOMINATIM_REQUEST_AT
@@ -657,7 +721,7 @@ def _geocode_city(city):
                     params={
                         "q": query,
                         "format": "json",
-                        "limit": "1",
+                        "limit": "10",
                         "countrycodes": "cn",
                     },
                     headers={
@@ -668,14 +732,23 @@ def _geocode_city(city):
                 )
                 _LAST_NOMINATIM_REQUEST_AT = time.monotonic()
             results = resp.json()
-            if results:
-                lat = float(results[0]["lat"])
-                lon = float(results[0]["lon"])
+            selected = _select_geocode_result(results)
+            if selected:
+                priority, coord = selected
+                if priority >= 3 and priority < fallback_priority:
+                    fallback_priority = priority
+                    fallback_coord = coord
+                    continue
+                lat, lon = coord
                 _set_cached_geocode(city, lat, lon)
                 return (lat, lon)
         except Exception:
             pass
         time.sleep(1)
+    if fallback_coord:
+        lat, lon = fallback_coord
+        _set_cached_geocode(city, lat, lon)
+        return (lat, lon)
     return None
 
 

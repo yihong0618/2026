@@ -109,6 +109,105 @@ class GetUpRunningTests(unittest.TestCase):
         )
 
 
+class GetUpGeocodeTests(unittest.TestCase):
+    def test_geocode_city_uses_center_override_before_cache(self):
+        original_script_dir = get_up.SCRIPT_DIR
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                get_up.SCRIPT_DIR = Path(tmpdir)
+                get_up._set_cached_geocode("丹东", 40.5791477, 124.4407146)
+
+                with mock.patch.object(get_up.requests, "get") as get:
+                    result = get_up._geocode_city("丹东")
+
+                self.assertEqual(result, get_up.CITY_CENTER_COORD_OVERRIDES["丹东"])
+                get.assert_not_called()
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_geocode_city_prefers_place_city_over_admin_boundary(self):
+        original_script_dir = get_up.SCRIPT_DIR
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                get_up.SCRIPT_DIR = Path(tmpdir)
+                response = mock.Mock()
+                response.json.return_value = [
+                    {
+                        "lat": "40.5791477",
+                        "lon": "124.4407146",
+                        "class": "boundary",
+                        "type": "administrative",
+                        "addresstype": "region",
+                    },
+                    {
+                        "lat": "40.1237658",
+                        "lon": "124.3821748",
+                        "class": "place",
+                        "type": "city",
+                        "addresstype": "city",
+                    },
+                ]
+
+                with (
+                    mock.patch.object(
+                        get_up.requests, "get", return_value=response
+                    ) as get,
+                    mock.patch.object(get_up.time, "sleep"),
+                ):
+                    result = get_up._geocode_city("测试城")
+
+                self.assertEqual(result, (40.1237658, 124.3821748))
+                self.assertEqual(get.call_args.kwargs["params"]["limit"], "10")
+                self.assertEqual(
+                    get_up._get_cached_geocode("测试城"),
+                    (40.1237658, 124.3821748),
+                )
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_geocode_city_tries_fallback_query_before_caching_weak_result(self):
+        original_script_dir = get_up.SCRIPT_DIR
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                get_up.SCRIPT_DIR = Path(tmpdir)
+                weak_response = mock.Mock()
+                weak_response.json.return_value = [
+                    {
+                        "lat": "40.0",
+                        "lon": "120.0",
+                        "class": "boundary",
+                        "type": "administrative",
+                        "addresstype": "region",
+                    }
+                ]
+                city_response = mock.Mock()
+                city_response.json.return_value = [
+                    {
+                        "lat": "40.5",
+                        "lon": "120.5",
+                        "class": "place",
+                        "type": "city",
+                        "addresstype": "city",
+                    }
+                ]
+
+                with (
+                    mock.patch.object(
+                        get_up.requests,
+                        "get",
+                        side_effect=[weak_response, city_response],
+                    ) as get,
+                    mock.patch.object(get_up.time, "sleep"),
+                ):
+                    result = get_up._geocode_city("测试城")
+
+                self.assertEqual(result, (40.5, 120.5))
+                self.assertEqual(get.call_count, 2)
+                self.assertEqual(get_up._get_cached_geocode("测试城"), (40.5, 120.5))
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+
 class GetUpPosterTests(unittest.TestCase):
     def test_resolve_city_poster_font_prefers_local_fonts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
