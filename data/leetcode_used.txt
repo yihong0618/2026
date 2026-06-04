@@ -100,3 +100,4 @@ minimum-cost-of-buying-candies-with-discount
 earliest-finish-time-for-land-and-water-rides-i
 count-pairs-of-similar-strings
 matrix-cells-in-distance-order
+smallest-index-with-equal-value
