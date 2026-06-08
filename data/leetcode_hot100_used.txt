@@ -37,3 +37,4 @@ next-permutation
 convert-sorted-array-to-binary-search-tree
 longest-substring-without-repeating-characters
 unique-paths
+sort-list
