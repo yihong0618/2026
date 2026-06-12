@@ -104,3 +104,4 @@ smallest-index-with-equal-value
 maximum-length-substring-with-two-occurrences
 subtree-of-another-tree
 ping-heng-er-cha-shu-lcof
+weighted-word-mapping
