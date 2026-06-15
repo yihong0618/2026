@@ -40,3 +40,4 @@ unique-paths
 sort-list
 flatten-binary-tree-to-linked-list
 palindrome-partitioning
+symmetric-tree
