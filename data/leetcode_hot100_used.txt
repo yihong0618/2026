@@ -42,3 +42,4 @@ flatten-binary-tree-to-linked-list
 palindrome-partitioning
 symmetric-tree
 reverse-linked-list
+course-schedule
