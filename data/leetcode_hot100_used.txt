@@ -43,3 +43,4 @@ palindrome-partitioning
 symmetric-tree
 reverse-linked-list
 course-schedule
+generate-parentheses
