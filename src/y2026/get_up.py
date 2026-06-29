@@ -1,5 +1,6 @@
 import argparse
 import html
+import json
 import random
 import re
 import sqlite3
@@ -7,9 +8,10 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from math import ceil
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import duckdb
 import pendulum
@@ -20,6 +22,8 @@ from telegramify_markdown import markdownify
 from terraink_py.api import generate_poster
 from terraink_py.models import PosterRequest
 from zhconv import convert
+
+from y2026 import weekly_tg_summary
 
 # 1 real get up
 GET_UP_ISSUE_NUMBER = 1
@@ -53,6 +57,14 @@ BLOG_SITES_USED_FILE = "data/blog_sites_used.txt"
 CLASSIC_MEDIA_USED_FILE = "data/classic_media_used.txt"
 CHINESE_CITIES_FILE = "data/chinese_cities.txt"
 CITIES_USED_FILE = "data/cities_used.txt"
+SELECTED_TG_MESSAGES_FILE = "data/selected_tg_messages.txt"
+SELECTED_TG_USED_FILE = "data/selected_tg_used.txt"
+
+SELECTED_TG_CHANNEL = "@hyi0618"
+SELECTED_TG_TAG = weekly_tg_summary.DEFAULT_SELECTED_TAG
+SELECTED_TG_SYNC_PAGE_LIMIT = 2000
+SELECTED_TG_TIMEOUT = 12.0
+SELECTED_TG_RANDOM_SALT = 654
 
 CITY_WIKI_BASE_URL = "https://zh.wikipedia.org/wiki/{city}"
 CITY_RANDOM_SALT = 77
@@ -2041,7 +2053,7 @@ def _classic_game_display_title(game):
 
 def _format_classic_game_intro(game, now=None):
     lines = [
-        f"good old days：{game.media_label}",
+        f"经典回顾：{game.media_label}",
         "",
         f"• [{_classic_game_display_title(game)}]({game.url})",
     ]
@@ -2085,20 +2097,318 @@ def _select_classic_media_kind(now):
     return rng.choice(CLASSIC_MEDIA_KINDS)
 
 
-def get_classic_media_intro():
+def _strip_selected_tg_tag(text):
+    clean_text = re.sub(re.escape(SELECTED_TG_TAG), "", text, flags=re.IGNORECASE)
+    lines = []
+    for line in clean_text.splitlines():
+        clean_line = " ".join(line.split())
+        if clean_line:
+            lines.append(clean_line)
+    return "\n".join(lines).strip()
+
+
+def _clean_selected_tg_links(links):
+    clean_links = []
+    seen = set()
+    for link in links:
+        clean_link = _strip_selected_tg_tag(link)
+        parsed_link = urlparse(clean_link)
+        if (
+            parsed_link.netloc == "t.me"
+            and not parsed_link.path.strip("/")
+            and "selected" in parsed_link.query.lower()
+        ):
+            continue
+        if not clean_link or clean_link in seen:
+            continue
+        seen.add(clean_link)
+        clean_links.append(clean_link)
+    return clean_links
+
+
+def _format_selected_tg_message(message):
+    title = _selected_tg_message_title(message)
+    if not title:
+        title = str(message.message_id)
+
+    text = _strip_selected_tg_tag(message.text)
+    lines = [
+        "今天选读：",
+        "",
+        f"• [{title}]({message.url})",
+    ]
+    if text and text != title:
+        lines.append(text)
+
+    links = _clean_selected_tg_links(message.links)
+    if len(links) == 1:
+        lines.append(f"链接：{links[0]}")
+    elif links:
+        lines.append("链接：")
+        lines.extend(f"• {link}" for link in links[:3])
+
+    return "\n".join(lines)
+
+
+def _selected_tg_message_title(message):
+    for line in message.text.splitlines():
+        title = _strip_selected_tg_tag(line)
+        if title:
+            return title
+    return ""
+
+
+class _TelegramReplyParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.reply_by_post = {}
+        self._current_post = None
+        self._message_div_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        attr_map = {key: value or "" for key, value in attrs}
+        classes = set(attr_map.get("class", "").split())
+
+        if (
+            tag == "div"
+            and "tgme_widget_message" in classes
+            and attr_map.get("data-post")
+            and self._current_post is None
+        ):
+            self._current_post = attr_map["data-post"]
+            self._message_div_depth = 1
+            return
+
+        if self._current_post is None:
+            return
+
+        if tag == "div":
+            self._message_div_depth += 1
+
+        if tag == "a" and "tgme_widget_message_reply" in classes:
+            href = attr_map.get("href", "").strip()
+            if href:
+                self.reply_by_post[self._current_post] = urljoin(
+                    "https://t.me",
+                    href,
+                )
+
+    def handle_endtag(self, tag):
+        if self._current_post is None:
+            return
+
+        if tag == "div":
+            self._message_div_depth -= 1
+            if self._message_div_depth <= 0:
+                self._current_post = None
+                self._message_div_depth = 0
+
+
+def _parse_tg_reply_posts(html_text):
+    parser = _TelegramReplyParser()
+    parser.feed(html_text)
+    return parser.reply_by_post
+
+
+def _tg_post_from_url(url):
+    parsed_url = urlparse(url)
+    path_parts = parsed_url.path.strip("/").split("/")
+    if len(path_parts) < 2 or not path_parts[1].isdigit():
+        return ""
+    return f"{path_parts[0]}/{path_parts[1]}"
+
+
+def _hydrate_selected_tg_reply_messages(messages, reply_by_post):
+    messages_by_post = {message.post: message for message in messages}
+    hydrated_messages = []
+    for message in messages:
+        reply_post = _tg_post_from_url(reply_by_post.get(message.post, ""))
+        reply_message = messages_by_post.get(reply_post)
+        if not reply_message or not message.has_tag(SELECTED_TG_TAG):
+            hydrated_messages.append(message)
+            continue
+
+        reply_text = reply_message.text
+        if not reply_message.has_tag(SELECTED_TG_TAG):
+            reply_text = f"{reply_text}\n{SELECTED_TG_TAG}"
+        hydrated_messages.append(
+            weekly_tg_summary.ChannelMessage(
+                message_id=message.message_id,
+                post=message.post,
+                url=message.url,
+                date=message.date,
+                text=reply_text,
+                links=reply_message.links,
+                source=message.source,
+            )
+        )
+    return hydrated_messages
+
+
+def _selected_tg_message_key(message):
+    return message.post or str(message.message_id)
+
+
+def _selected_tg_messages_path():
+    return _data_file_path(SELECTED_TG_MESSAGES_FILE)
+
+
+def _selected_tg_used_path():
+    return _data_file_path(SELECTED_TG_USED_FILE)
+
+
+def _selected_tg_message_from_record(record):
+    parsed_date = pendulum.parse(record["date"])
+    if not isinstance(parsed_date, pendulum.DateTime):
+        raise ValueError(f"unsupported Telegram date: {record['date']}")
+
+    return weekly_tg_summary.ChannelMessage(
+        message_id=int(record["message_id"]),
+        post=str(record["post"]),
+        url=str(record["url"]),
+        date=parsed_date.in_timezone(TIMEZONE),
+        text=str(record["text"]),
+        links=tuple(record.get("links", [])),
+        source=str(record.get("source", "cache")),
+    )
+
+
+def _load_selected_tg_messages():
+    messages = []
+    for line in _read_non_empty_lines(_selected_tg_messages_path()):
+        try:
+            messages.append(_selected_tg_message_from_record(json.loads(line)))
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return sorted(messages, key=lambda message: message.message_id)
+
+
+def _save_selected_tg_messages(messages):
+    path = _selected_tg_messages_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    unique_messages = {
+        _selected_tg_message_key(message): message
+        for message in sorted(messages, key=lambda item: item.message_id)
+    }
+    lines = [
+        json.dumps(message.as_dict(), ensure_ascii=False, sort_keys=True)
+        for message in unique_messages.values()
+    ]
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def _append_selected_tg_used(message):
+    path = _selected_tg_used_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _append_line(path, _selected_tg_message_key(message))
+
+
+def _fetch_selected_tg_messages_since(latest_message_id=None):
+    channel_name = weekly_tg_summary.normalize_channel(SELECTED_TG_CHANNEL)
+    session = requests.Session()
+    before = None
+    by_post = {}
+
+    for _ in range(SELECTED_TG_SYNC_PAGE_LIMIT):
+        page_messages = _fetch_selected_tg_archive_page(session, channel_name, before)
+        if not page_messages:
+            break
+
+        for message in page_messages:
+            if not message.has_tag(SELECTED_TG_TAG):
+                continue
+            if latest_message_id is None or message.message_id > latest_message_id:
+                by_post.setdefault(message.post, message)
+
+        oldest = min(page_messages, key=lambda message: message.message_id)
+        before = oldest.message_id
+        if latest_message_id is not None and oldest.message_id <= latest_message_id:
+            break
+
+    return sorted(by_post.values(), key=lambda message: message.message_id)
+
+
+def _sync_selected_tg_message_pool():
+    cached_messages = _load_selected_tg_messages()
+    latest_message_id = (
+        max(message.message_id for message in cached_messages)
+        if cached_messages
+        else None
+    )
+    try:
+        new_messages = _fetch_selected_tg_messages_since(latest_message_id)
+    except requests.RequestException as error:
+        if cached_messages:
+            print(f"Error refreshing selected Telegram messages: {error}")
+            return cached_messages
+        raise
+
+    if not new_messages:
+        return cached_messages
+
+    messages_by_key = {
+        _selected_tg_message_key(message): message for message in cached_messages
+    }
+    for message in new_messages:
+        messages_by_key[_selected_tg_message_key(message)] = message
+
+    messages = sorted(messages_by_key.values(), key=lambda message: message.message_id)
+    _save_selected_tg_messages(messages)
+    return messages
+
+
+def _select_selected_tg_message_from_pool(now):
+    messages = _sync_selected_tg_message_pool()
+    used_keys = set(_read_non_empty_lines(_selected_tg_used_path()))
+    available = [
+        message
+        for message in messages
+        if _selected_tg_message_key(message) not in used_keys
+    ]
+    if not available:
+        return None
+
+    message = _daily_rng(now, SELECTED_TG_RANDOM_SALT).choice(available)
+    _append_selected_tg_used(message)
+    return message
+
+
+def _fetch_selected_tg_archive_page(session, channel_name, before):
+    params = {}
+    if before is not None:
+        params["before"] = before
+
+    response = session.get(
+        weekly_tg_summary.TELEGRAM_ARCHIVE_URL.format(channel=channel_name),
+        params=params,
+        timeout=SELECTED_TG_TIMEOUT,
+        headers={"User-Agent": "y2026-get-up-selected/1.0"},
+    )
+    response.raise_for_status()
+
+    html_text = response.text
+    parser = weekly_tg_summary.TelegramArchiveParser(channel_name)
+    parser.feed(html_text)
+    return _hydrate_selected_tg_reply_messages(
+        parser.messages,
+        _parse_tg_reply_posts(html_text),
+    )
+
+
+def get_selected_tg_message_intro():
     try:
         now = _now()
-        used_keys = _load_used_classic_media()
-        kind = _select_classic_media_kind(now)
-        game = _select_neodb_media(now, used_keys, kind)
-        if game is None:
+        message = _select_selected_tg_message_from_pool(now)
+        if message is None:
             return ""
-
-        _save_used_classic_media(game.key)
-        return _format_classic_game_intro(game, now)
+        return _format_selected_tg_message(message)
     except Exception as error:
-        print(f"Error getting classic media: {error}")
+        print(f"Error getting selected Telegram message: {error}")
         return ""
+
+
+def get_classic_media_intro():
+    return get_selected_tg_message_intro()
 
 
 def get_classic_game_intro():

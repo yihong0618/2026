@@ -110,7 +110,7 @@ def main():
             "历史上的今天博客", get_up.get_blog_article_from_history
         )
         history_today = run_component(
-            "good old days",
+            "今天选读",
             get_up.get_classic_media_intro,
         )
         leetcode = run_component("今日 LeetCode", get_up.get_daily_leetcode)

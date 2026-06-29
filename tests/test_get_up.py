@@ -580,70 +580,271 @@ class GetUpClassicGameTests(unittest.TestCase):
         self.assertEqual(game.description, "Video game Doom 2 for MS-DOS.")
         self.assertEqual(game.downloads, 123)
 
-    def test_get_classic_media_intro_saves_selected_neodb_media(self):
+    def test_get_classic_media_intro_returns_random_selected_tg_message(self):
+        class StableRng:
+            def choice(self, values):
+                return values[1]
+
         with tempfile.TemporaryDirectory() as tmpdir:
             original_script_dir = get_up.SCRIPT_DIR
             get_up.SCRIPT_DIR = Path(tmpdir)
             try:
                 (Path(tmpdir) / "data").mkdir()
-                used_game = get_up.ClassicGame(
-                    identifier="neodb-game-used",
-                    title="Used Game",
-                    creator="Old Studio",
-                    year="1990",
-                    description="Already used.",
-                    downloads=0,
-                    source="NeoDB",
-                    release_date="1990-01-01",
-                    source_url="https://neodb.social/game/used",
-                    media_type="game",
-                    media_label="游戏",
-                )
-                new_game = get_up.ClassicGame(
-                    identifier="neodb-game-new",
-                    title="New Game",
-                    creator="New Studio",
-                    year="1991",
-                    description="A fresh old game.",
-                    downloads=0,
-                    source="NeoDB",
-                    release_date="1991-02-03",
-                    source_url="https://neodb.social/game/new",
-                    media_type="game",
-                    media_label="游戏",
-                )
-                used_path = Path(tmpdir) / get_up.CLASSIC_MEDIA_USED_FILE
-                used_path.write_text(f"{used_game.key}\n", encoding="utf-8")
                 now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
-                kind = get_up.CLASSIC_MEDIA_KINDS[0]
+                first = get_up.weekly_tg_summary.ChannelMessage(
+                    message_id=101,
+                    post="hyi0618/101",
+                    url="https://t.me/hyi0618/101",
+                    date=now,
+                    text="第一篇 #selected",
+                    links=("https://example.com/one",),
+                    source="web",
+                )
+                second = get_up.weekly_tg_summary.ChannelMessage(
+                    message_id=102,
+                    post="hyi0618/102",
+                    url="https://t.me/hyi0618/102",
+                    date=now,
+                    text="第二篇 #selected\nhttps://example.com/two#selected",
+                    links=(
+                        "https://t.me?q=%23selected",
+                        "https://example.com/two#selected",
+                    ),
+                    source="web",
+                )
 
                 with (
+                    mock.patch.object(get_up, "_now", return_value=now),
                     mock.patch.object(
                         get_up,
-                        "_now",
-                        return_value=now,
+                        "_sync_selected_tg_message_pool",
+                        return_value=[first, second],
                     ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_classic_media_kind",
-                        return_value=kind,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_neodb_media",
-                        return_value=new_game,
-                    ) as select_neodb,
+                    mock.patch.object(get_up, "_daily_rng", return_value=StableRng()),
                 ):
                     result = get_up.get_classic_media_intro()
 
-                self.assertIn("good old days：游戏", result)
-                self.assertIn("[New Game](https://neodb.social/game/new)", result)
-                self.assertIn("简介：A fresh old game.", result)
-                select_neodb.assert_called_once_with(now, {used_game.key}, kind)
-                used_keys = used_path.read_text(encoding="utf-8").splitlines()
-                self.assertEqual(used_keys, [used_game.key, new_game.key])
+                self.assertIn("今天选读：", result)
+                self.assertIn("[第二篇](https://t.me/hyi0618/102)", result)
+                self.assertIn("链接：https://example.com/two", result)
+                self.assertNotIn("#selected", result)
+                self.assertNotIn("https://t.me?q=%23selected", result)
+                self.assertNotIn("good old " + "days", result)
+                self.assertEqual(
+                    (Path(tmpdir) / get_up.SELECTED_TG_USED_FILE)
+                    .read_text(encoding="utf-8")
+                    .splitlines(),
+                    ["hyi0618/102"],
+                )
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
+
+    def test_format_selected_tg_message_does_not_truncate_text_or_links(self):
+        now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+        long_url = "https://example.com/" + "very-long-path-" * 30
+        message = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=101,
+            post="hyi0618/101",
+            url="https://t.me/hyi0618/101",
+            date=now,
+            text=f"一篇很长的文章 #selected\n{long_url}",
+            links=(long_url,),
+            source="web",
+        )
+
+        result = get_up._format_selected_tg_message(message)
+
+        self.assertIn(long_url, result)
+        self.assertNotIn("...", result)
+        self.assertNotIn("…", result)
+
+    def test_hydrate_selected_tg_reply_message_uses_full_replied_message(self):
+        now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+        full_url = (
+            "https://blog.mrcroxx.com/posts/"
+            "foyer-a-hybrid-cache-in-rust-past-present-and-future/"
+        )
+        original = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=101,
+            post="hyi0618/101",
+            url="https://t.me/hyi0618/101",
+            date=now,
+            text=f"Foyer: A Hybrid Cache in Rust\n{full_url}",
+            links=(full_url,),
+            source="web",
+        )
+        selected = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=102,
+            post="hyi0618/102",
+            url="https://t.me/hyi0618/102",
+            date=now,
+            text="Foyer: A Hybrid Cache in Rust https://blog.mrcroxx.com/posts/foyer-a-hybrid… #selected",
+            links=("https://blog.mrcroxx.com/posts/foyer-a-hybrid…#selected",),
+            source="web",
+        )
+
+        result = get_up._hydrate_selected_tg_reply_messages(
+            [original, selected],
+            {"hyi0618/102": "https://t.me/hyi0618/101"},
+        )
+        hydrated = result[1]
+
+        self.assertEqual(hydrated.post, "hyi0618/102")
+        self.assertIn(full_url, hydrated.text)
+        self.assertEqual(hydrated.links, (full_url,))
+        self.assertNotIn("foyer-a-hybrid…", hydrated.text)
+        self.assertTrue(hydrated.has_tag(get_up.SELECTED_TG_TAG))
+
+    def test_fetch_selected_tg_messages_since_filters_selected_tag(self):
+        now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+        selected = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=101,
+            post="hyi0618/101",
+            url="https://t.me/hyi0618/101",
+            date=now,
+            text="选中 #selected",
+            links=(),
+            source="web",
+        )
+        regular = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=102,
+            post="hyi0618/102",
+            url="https://t.me/hyi0618/102",
+            date=now,
+            text="普通消息",
+            links=(),
+            source="web",
+        )
+
+        with mock.patch.object(
+            get_up,
+            "_fetch_selected_tg_archive_page",
+            side_effect=[[selected, regular], []],
+        ) as fetch_selected_tg_archive_page:
+            result = get_up._fetch_selected_tg_messages_since()
+
+        self.assertEqual(result, [selected])
+        self.assertEqual(fetch_selected_tg_archive_page.call_count, 2)
+        self.assertEqual(
+            fetch_selected_tg_archive_page.call_args_list[0].args[1],
+            "hyi0618",
+        )
+        self.assertIsNone(fetch_selected_tg_archive_page.call_args_list[0].args[2])
+        self.assertEqual(fetch_selected_tg_archive_page.call_args_list[1].args[2], 101)
+
+    def test_fetch_selected_tg_messages_since_stops_after_cached_latest(self):
+        now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+        cached = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=101,
+            post="hyi0618/101",
+            url="https://t.me/hyi0618/101",
+            date=now,
+            text="已缓存 #selected",
+            links=(),
+            source="web",
+        )
+        new = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=103,
+            post="hyi0618/103",
+            url="https://t.me/hyi0618/103",
+            date=now,
+            text="新消息 #selected",
+            links=(),
+            source="web",
+        )
+
+        with mock.patch.object(
+            get_up,
+            "_fetch_selected_tg_archive_page",
+            return_value=[new, cached],
+        ) as fetch_selected_tg_archive_page:
+            result = get_up._fetch_selected_tg_messages_since(101)
+
+        self.assertEqual(result, [new])
+        fetch_selected_tg_archive_page.assert_called_once()
+
+    def test_sync_selected_tg_message_pool_saves_initial_cache(self):
+        now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+        selected = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=101,
+            post="hyi0618/101",
+            url="https://t.me/hyi0618/101",
+            date=now,
+            text="选中 #selected",
+            links=("https://example.com/one",),
+            source="web",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                with mock.patch.object(
+                    get_up,
+                    "_fetch_selected_tg_messages_since",
+                    return_value=[selected],
+                ) as fetch_selected_tg_messages_since:
+                    result = get_up._sync_selected_tg_message_pool()
+
+                self.assertEqual(result, [selected])
+                fetch_selected_tg_messages_since.assert_called_once_with(None)
+                cached = get_up._load_selected_tg_messages()
+                self.assertEqual([message.post for message in cached], ["hyi0618/101"])
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_sync_selected_tg_message_pool_fetches_after_cached_latest(self):
+        now = pendulum.datetime(2026, 5, 21, tz=get_up.TIMEZONE)
+        cached = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=101,
+            post="hyi0618/101",
+            url="https://t.me/hyi0618/101",
+            date=now,
+            text="已缓存 #selected",
+            links=(),
+            source="web",
+        )
+        new = get_up.weekly_tg_summary.ChannelMessage(
+            message_id=103,
+            post="hyi0618/103",
+            url="https://t.me/hyi0618/103",
+            date=now,
+            text="新消息 #selected",
+            links=(),
+            source="web",
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                get_up._save_selected_tg_messages([cached])
+                with mock.patch.object(
+                    get_up,
+                    "_fetch_selected_tg_messages_since",
+                    return_value=[new],
+                ) as fetch_selected_tg_messages_since:
+                    result = get_up._sync_selected_tg_message_pool()
+
+                self.assertEqual(
+                    [message.post for message in result], ["hyi0618/101", "hyi0618/103"]
+                )
+                fetch_selected_tg_messages_since.assert_called_once_with(101)
+                cached_messages = get_up._load_selected_tg_messages()
+                self.assertEqual(
+                    [message.post for message in cached_messages],
+                    ["hyi0618/101", "hyi0618/103"],
+                )
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
+    def test_get_classic_media_intro_returns_empty_without_selected_tg_message(self):
+        with mock.patch.object(
+            get_up,
+            "_sync_selected_tg_message_pool",
+            return_value=[],
+        ):
+            self.assertEqual(get_up.get_classic_media_intro(), "")
 
     def test_select_neodb_media_prefers_same_day_release(self):
         now = pendulum.datetime(2026, 5, 24, tz=get_up.TIMEZONE)
@@ -685,120 +886,6 @@ class GetUpClassicGameTests(unittest.TestCase):
 
         self.assertEqual(selected.title, "Today Game")
         self.assertEqual(selected.release_date, "1997-05-24")
-
-    def test_get_classic_media_intro_uses_neodb_book(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_script_dir = get_up.SCRIPT_DIR
-            get_up.SCRIPT_DIR = Path(tmpdir)
-            try:
-                (Path(tmpdir) / "data").mkdir()
-                book = get_up.ClassicGame(
-                    identifier="neodb-book-old-book",
-                    title="老舍小说集",
-                    creator="老舍",
-                    year="1936",
-                    description="中文旧书。",
-                    downloads=0,
-                    source="NeoDB",
-                    release_date="1936-05",
-                    source_url="https://neodb.social/book/old-book",
-                    media_type="book",
-                    media_label="book",
-                    release_word="出版",
-                )
-                kind = get_up.CLASSIC_MEDIA_KINDS[3]
-
-                with (
-                    mock.patch.object(
-                        get_up,
-                        "_now",
-                        return_value=pendulum.datetime(
-                            2026,
-                            5,
-                            24,
-                            tz=get_up.TIMEZONE,
-                        ),
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_classic_media_kind",
-                        return_value=kind,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_neodb_media",
-                        return_value=book,
-                    ),
-                ):
-                    result = get_up.get_classic_media_intro()
-
-                self.assertIn("good old days：book", result)
-                self.assertIn("老舍小说集", result)
-                self.assertIn("NeoDB / 1936-05（90 年前） / 老舍", result)
-            finally:
-                get_up.SCRIPT_DIR = original_script_dir
-
-    def test_get_classic_media_intro_uses_neodb_for_music(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            original_script_dir = get_up.SCRIPT_DIR
-            get_up.SCRIPT_DIR = Path(tmpdir)
-            try:
-                (Path(tmpdir) / "data").mkdir()
-                music = get_up.ClassicGame(
-                    identifier="neodb-music-abc",
-                    title="In Rainbows",
-                    creator="Radiohead",
-                    year="2007",
-                    description="英伦巨头 Radiohead 的第7张录音室专辑。",
-                    downloads=0,
-                    source="NeoDB",
-                    release_date="2007-10-10",
-                    source_url="https://neodb.social/album/abc",
-                    external_url="https://music.douban.com/subject/2278148/",
-                    media_type="music",
-                    media_label="音乐",
-                    release_word="发行",
-                )
-
-                with (
-                    mock.patch.object(
-                        get_up,
-                        "_now",
-                        return_value=pendulum.datetime(
-                            2026,
-                            5,
-                            24,
-                            tz=get_up.TIMEZONE,
-                        ),
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_classic_media_kind",
-                        return_value=get_up.CLASSIC_MEDIA_KINDS[2],
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_neodb_music",
-                        return_value=music,
-                    ),
-                    mock.patch.object(
-                        get_up,
-                        "_select_neodb_media",
-                        return_value=music,
-                    ) as select_neodb,
-                ):
-                    result = get_up.get_classic_media_intro()
-
-                self.assertIn("good old days：音乐", result)
-                self.assertIn("2007-10-10（19 年前）", result)
-                self.assertIn("[NeoDB](https://neodb.social/album/abc)", result)
-                self.assertIn(
-                    "[music.douban.com](https://music.douban.com/subject/2278148/)",
-                    result,
-                )
-                select_neodb.assert_called_once()
-            finally:
-                get_up.SCRIPT_DIR = original_script_dir
 
     def test_fetch_wikidata_chinese_title_uses_video_game_result(self):
         response = mock.Mock()
