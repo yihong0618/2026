@@ -113,3 +113,4 @@ maximum-number-of-balloons
 relative-ranks
 time-needed-to-buy-tickets
 number-of-strings-that-appear-as-substrings-in-word
+remove-element
