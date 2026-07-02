@@ -47,3 +47,4 @@ generate-parentheses
 word-search
 merge-intervals
 permutations
+majority-element
