@@ -121,3 +121,4 @@ remove-outermost-parentheses
 pass-the-pillow
 concatenate-non-zero-digits-and-multiply-by-sum-i
 diameter-of-binary-tree
+detect-pattern-of-length-m-repeated-k-or-more-times

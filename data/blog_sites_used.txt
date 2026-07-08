@@ -130,3 +130,4 @@ blog.feimind.xyz
 arthurchiao.art
 pan.icu
 psiace.me
+authurwhywait.github.io
