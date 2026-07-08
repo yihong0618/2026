@@ -120,3 +120,4 @@ convert-1d-array-into-2d-array
 remove-outermost-parentheses
 pass-the-pillow
 concatenate-non-zero-digits-and-multiply-by-sum-i
+diameter-of-binary-tree
