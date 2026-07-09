@@ -48,3 +48,4 @@ word-search
 merge-intervals
 permutations
 majority-element
+invert-binary-tree
