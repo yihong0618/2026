@@ -187,6 +187,8 @@ BIRTH_YEAR = 1989  # change it to your birth year
 
 CITY_GEOCODE_DB = "data/city_geocode_cache.db"
 CITY_MAP_FILE = "cities_map.png"
+CITY_MAP_RECENT_HIGHLIGHT = 10
+CITY_MAP_LEADER_MIN_OFFSET_PTS = 13
 CITY_POSTER_MAX_ATTEMPTS = 3
 CITY_POSTER_RETRY_DELAY_SECONDS = 2
 _NOMINATIM_LOCK = threading.Lock()
@@ -871,7 +873,10 @@ def _generate_cities_map(today_city=""):
                 city_coords.append((city, coord[0], coord[1]))
         if not city_coords:
             return ""
-        return _render_cities_map(city_coords, today_city=today_city)
+        recent_cities = [c[0] for c in city_coords[-CITY_MAP_RECENT_HIGHLIGHT:]]
+        return _render_cities_map(
+            city_coords, today_city=today_city, recent_cities=recent_cities
+        )
     except Exception as error:
         print(f"Error generating cities map: {error}")
         return ""
@@ -920,44 +925,121 @@ def _label_box_for_offset(px, py, width, height, dx, dy, pts_to_px):
     return (x0, y0, x1, y1)
 
 
-def _measure_label_sizes(labels, ax, fontsize=8, priority_labels=()):
-    fig = ax.get_figure()
-    dpi = fig.dpi
-    pts_to_px = dpi / 72.0
-    priority_labels = set(priority_labels)
+def _segments_intersect(a1, a2, b1, b2):
+    def cross(origin, p, q):
+        return (p[0] - origin[0]) * (q[1] - origin[1]) - (p[1] - origin[1]) * (
+            q[0] - origin[0]
+        )
 
-    def fallback_size(label):
-        label_fontsize = fontsize + 2 if label in priority_labels else fontsize
-        avg_char_w = label_fontsize * 0.95 * pts_to_px
+    d1 = cross(b1, b2, a1)
+    d2 = cross(b1, b2, a2)
+    d3 = cross(a1, a2, b1)
+    d4 = cross(a1, a2, b2)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+
+
+def _segment_intersects_rect(p1, p2, rect):
+    x0, y0, x1, y1 = rect
+    for point in (p1, p2):
+        if x0 <= point[0] <= x1 and y0 <= point[1] <= y1:
+            return True
+    corners = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+    edges = (
+        (corners[0], corners[1]),
+        (corners[1], corners[2]),
+        (corners[2], corners[3]),
+        (corners[3], corners[0]),
+    )
+    return any(_segments_intersect(p1, p2, e1, e2) for e1, e2 in edges)
+
+
+def _city_label_specs(labels, today_city, recent_labels):
+    recent_labels = set(recent_labels)
+    specs = []
+    for label in labels:
+        if label == today_city:
+            specs.append(
+                {"kind": "today", "fontsize": 10, "has_box": True, "pad": 0.34}
+            )
+        elif label in recent_labels:
+            specs.append(
+                {"kind": "recent", "fontsize": 9, "has_box": True, "pad": 0.24}
+            )
+        else:
+            specs.append(
+                {"kind": "regular", "fontsize": 6.5, "has_box": False, "pad": 0.0}
+            )
+    return specs
+
+
+def _province_geoms_for_labels(china, lons, lats, specs):
+    """Prepared province polygon per label; only muted labels are constrained."""
+    empty = [None] * len(lons)
+    if china is None:
+        return empty
+    try:
+        from shapely.geometry import Point
+        from shapely.prepared import prep
+    except ImportError:
+        return empty
+    try:
+        prepared = [
+            prep(geom) if geom is not None and not geom.is_empty else None
+            for geom in china.geometry
+        ]
+    except Exception:
+        return empty
+
+    result = []
+    for lon, lat, spec in zip(lons, lats, specs):
+        geom = None
+        if spec["kind"] == "regular":
+            point = Point(lon, lat)
+            for prepared_geom in prepared:
+                if prepared_geom is not None and prepared_geom.contains(point):
+                    geom = prepared_geom
+                    break
+        result.append(geom)
+    return result
+
+
+def _measure_label_sizes(labels, ax, specs):
+    fig = ax.get_figure()
+    pts_to_px = fig.dpi / 72.0
+
+    def fallback_size(label, spec):
+        fontsize = spec["fontsize"]
+        pad_px = 14 * pts_to_px if spec["has_box"] else 3 * pts_to_px
         return (
-            len(label) * avg_char_w + 14 * pts_to_px,
-            label_fontsize * 2.0 * pts_to_px,
+            len(label) * fontsize * 0.95 * pts_to_px + pad_px,
+            fontsize * 2.0 * pts_to_px,
         )
 
     canvas = getattr(fig, "canvas", None)
     if canvas is None:
-        return [fallback_size(label) for label in labels]
+        return [fallback_size(label, spec) for label, spec in zip(labels, specs)]
 
     texts = []
     try:
-        for label in labels:
-            is_priority = label in priority_labels
-            label_fontsize = fontsize + 2 if is_priority else fontsize
+        for label, spec in zip(labels, specs):
+            bbox = None
+            if spec["has_box"]:
+                bbox = dict(
+                    boxstyle=f"round,pad={spec['pad']}",
+                    facecolor="white",
+                    edgecolor="white",
+                )
             texts.append(
                 ax.text(
                     0,
                     0,
                     label,
-                    fontsize=label_fontsize,
-                    fontweight="bold" if is_priority else "normal",
+                    fontsize=spec["fontsize"],
+                    fontweight="bold" if spec["kind"] == "today" else "normal",
                     ha="left",
                     va="center",
                     alpha=0.0,
-                    bbox=dict(
-                        boxstyle="round,pad=0.34" if is_priority else "round,pad=0.24",
-                        facecolor="white",
-                        edgecolor="white",
-                    ),
+                    bbox=bbox,
                 )
             )
         canvas.draw()
@@ -973,41 +1055,77 @@ def _measure_label_sizes(labels, ax, fontsize=8, priority_labels=()):
             sizes.append((extent.width + 2 * pts_to_px, extent.height + 2 * pts_to_px))
         return sizes
     except Exception:
-        return [fallback_size(label) for label in labels]
+        return [fallback_size(label, spec) for label, spec in zip(labels, specs)]
     finally:
         for text in texts:
             text.remove()
 
 
-def _compute_label_offsets(lons, lats, labels, ax, fontsize=8, priority_labels=()):
+def _compute_label_offsets(lons, lats, labels, ax, specs, province_geoms=None):
     import math
 
     n = len(lons)
     if n == 0:
         return []
     fig = ax.get_figure()
-    dpi = fig.dpi
-    pts_to_px = dpi / 72.0
+    pts_to_px = fig.dpi / 72.0
     display_pts = [ax.transData.transform((lon, lat)) for lon, lat in zip(lons, lats)]
-    label_sizes = _measure_label_sizes(
-        labels, ax, fontsize=fontsize, priority_labels=priority_labels
-    )
+    label_sizes = _measure_label_sizes(labels, ax, specs)
+    if province_geoms is None:
+        province_geoms = [None] * n
+
+    inv_transform = ax.transData.inverted()
+
+    def province_outside_penalty(box, geom):
+        from shapely.geometry import Point
+
+        # Sample an inset box and keep the penalty soft: grazing the border
+        # must cost less than dragging the label away on a long leader.
+        inset_x = (box[2] - box[0]) * 0.1
+        inset_y = (box[3] - box[1]) * 0.1
+        x0, y0 = box[0] + inset_x, box[1] + inset_y
+        x1, y1 = box[2] - inset_x, box[3] - inset_y
+        xm = (x0 + x1) * 0.5
+        ym = (y0 + y1) * 0.5
+        samples = inv_transform.transform(
+            [
+                (x0, y0),
+                (x1, y0),
+                (x1, y1),
+                (x0, y1),
+                (xm, y0),
+                (xm, y1),
+                (x0, ym),
+                (x1, ym),
+            ]
+        )
+        outside = sum(1 for sx, sy in samples if not geom.contains(Point(sx, sy)))
+        return outside * 18.0
+
     base_angles = [25, 335, 60, 300, 0, 90, 270, 150, 210, 120, 240, 180]
-    candidates = []
-    for dist in (9, 16, 26, 40, 58, 80, 108, 140):
-        for angle_deg in base_angles:
-            rad = math.radians(angle_deg)
-            candidates.append(
-                (round(dist * math.cos(rad), 1), round(dist * math.sin(rad), 1))
-            )
-    dot_radius = 7 * pts_to_px
-    dot_boxes = [
-        (px - dot_radius, py - dot_radius, px + dot_radius, py + dot_radius)
-        for px, py in display_pts
-    ]
-    offsets = [None] * n
-    placed_boxes = []
-    priority_labels = set(priority_labels)
+
+    def build_candidates(dists):
+        result = []
+        for dist in dists:
+            for angle_deg in base_angles:
+                rad = math.radians(angle_deg)
+                result.append(
+                    (round(dist * math.cos(rad), 1), round(dist * math.sin(rad), 1))
+                )
+        return result
+
+    # Keep labels close to their dots: emphasized labels may reach a bit
+    # farther (they carry leader lines), muted labels must hug the dot.
+    emphasis_candidates = build_candidates((10, 15, 21, 28, 37, 48, 62))
+    regular_candidates = build_candidates((6, 9, 13, 18, 24, 32, 42))
+
+    # Collision radius must track the actual marker size per kind (scatter
+    # s=72/30/11), or phantom oversized dot boxes push labels far away.
+    dot_radius_pts = {"today": 5.5, "recent": 3.5, "regular": 2.2}
+    dot_boxes = []
+    for (px, py), spec in zip(display_pts, specs):
+        radius = dot_radius_pts[spec["kind"]] * pts_to_px
+        dot_boxes.append((px - radius, py - radius, px + radius, py + radius))
     density_radius = 95 * pts_to_px
     densities = []
     for i, point in enumerate(display_pts):
@@ -1019,10 +1137,11 @@ def _compute_label_offsets(lons, lats, labels, ax, fontsize=8, priority_labels=(
             if distance < density_radius:
                 density += (density_radius - distance) / density_radius
         densities.append(density)
+    kind_rank = {"today": 0, "recent": 1, "regular": 2}
     placement_order = sorted(
         range(n),
         key=lambda i: (
-            labels[i] not in priority_labels,
+            kind_rank[specs[i]["kind"]],
             -densities[i],
             -len(labels[i]),
             i,
@@ -1036,12 +1155,19 @@ def _compute_label_offsets(lons, lats, labels, ax, fontsize=8, priority_labels=(
         axes_bounds[0] + axes_bounds[2] - 6 * pts_to_px,
         axes_bounds[1] + axes_bounds[3] - 6 * pts_to_px,
     )
+    offsets = [None] * n
+    placed_boxes = []
+    placed_leaders = []
     for i in placement_order:
         px, py = display_pts[i]
         w, h = label_sizes[i]
+        candidates = (
+            regular_candidates if specs[i]["kind"] == "regular" else emphasis_candidates
+        )
         best_offset = candidates[0]
         best_cost = float("inf")
         best_box = (0.0, 0.0, 0.0, 0.0)
+        best_leader = None
         for dx, dy in candidates:
             box = _label_box_for_offset(px, py, w, h, dx, dy, pts_to_px)
             cost = 0.0
@@ -1056,19 +1182,47 @@ def _compute_label_offsets(lons, lats, labels, ax, fontsize=8, priority_labels=(
             for j, db in enumerate(dot_boxes):
                 cost += _rect_overlap_area(box, db) * (18 if j == i else 12)
             cost += _rect_outside_area(box, axes_bounds) * 80
-            cost += math.hypot(dx, dy) * 0.08
+            if province_geoms[i] is not None:
+                cost += province_outside_penalty(box, province_geoms[i])
+            offset_len = math.hypot(dx, dy)
+            cost += offset_len * 0.25
+            if (
+                specs[i]["kind"] == "regular"
+                and offset_len >= CITY_MAP_LEADER_MIN_OFFSET_PTS
+            ):
+                # Muted labels should hug their dot; needing a leader line at
+                # all is worse than slightly crossing a province border.
+                cost += 20 + (offset_len - CITY_MAP_LEADER_MIN_OFFSET_PTS) * 1.0
             if abs(dy) < 4:
                 cost += 5
+            leader = None
+            if offset_len >= CITY_MAP_LEADER_MIN_OFFSET_PTS:
+                anchor = (px + dx * pts_to_px, py + dy * pts_to_px)
+                leader = ((px, py), anchor)
+                for existing in placed_leaders:
+                    if _segments_intersect(
+                        leader[0], leader[1], existing[0], existing[1]
+                    ):
+                        cost += 1500
+                for pb in placed_boxes:
+                    if _segment_intersects_rect(leader[0], leader[1], pb):
+                        cost += 260
+            for existing in placed_leaders:
+                if _segment_intersects_rect(existing[0], existing[1], box):
+                    cost += 260
             if cost < best_cost:
                 best_cost = cost
                 best_offset = (dx, dy)
                 best_box = box
+                best_leader = leader
         offsets[i] = (round(best_offset[0]), round(best_offset[1]))
         placed_boxes.append(best_box)
+        if best_leader is not None:
+            placed_leaders.append(best_leader)
     return offsets
 
 
-def _render_cities_map(city_coords, today_city=""):
+def _render_cities_map(city_coords, today_city="", recent_cities=()):
     import matplotlib
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
@@ -1077,6 +1231,9 @@ def _render_cities_map(city_coords, today_city=""):
     _setup_matplotlib_font()
 
     today_city = today_city.strip()
+    recent_set = {city for city in recent_cities if city}
+    if today_city:
+        recent_set.add(today_city)
 
     lons = [c[2] for c in city_coords]
     lats = [c[1] for c in city_coords]
@@ -1133,34 +1290,46 @@ def _render_cities_map(city_coords, today_city=""):
     ax.margins(0)
     canvas.draw()
 
-    regular_lons = []
-    regular_lats = []
-    today_lons = []
-    today_lats = []
+    dot_groups = {
+        "regular": ([], []),
+        "recent": ([], []),
+        "today": ([], []),
+    }
     for lon, lat, label in zip(lons, lats, labels):
         if label == today_city:
-            today_lons.append(lon)
-            today_lats.append(lat)
+            group = "today"
+        elif label in recent_set:
+            group = "recent"
         else:
-            regular_lons.append(lon)
-            regular_lats.append(lat)
+            group = "regular"
+        dot_groups[group][0].append(lon)
+        dot_groups[group][1].append(lat)
 
-    if regular_lons:
+    if dot_groups["regular"][0]:
         ax.scatter(
-            regular_lons,
-            regular_lats,
-            s=18,
+            *dot_groups["regular"],
+            s=11,
+            marker="o",
+            color="#5B8DB8",
+            edgecolors="white",
+            linewidths=0.5,
+            alpha=0.75,
+            zorder=5,
+        )
+    if dot_groups["recent"][0]:
+        ax.scatter(
+            *dot_groups["recent"],
+            s=30,
             marker="o",
             color="#2563EB",
             edgecolors="white",
-            linewidths=0.8,
-            alpha=0.9,
-            zorder=5,
+            linewidths=0.9,
+            alpha=0.95,
+            zorder=6,
         )
-    if today_lons:
+    if dot_groups["today"][0]:
         ax.scatter(
-            today_lons,
-            today_lats,
+            *dot_groups["today"],
             s=72,
             marker="o",
             color="#F97316",
@@ -1170,43 +1339,76 @@ def _render_cities_map(city_coords, today_city=""):
             zorder=7,
         )
 
+    specs = _city_label_specs(labels, today_city, recent_set)
+    province_geoms = _province_geoms_for_labels(china, lons, lats, specs)
     label_offsets = _compute_label_offsets(
-        lons, lats, labels, ax, fontsize=8, priority_labels=(today_city,)
+        lons, lats, labels, ax, specs, province_geoms
     )
 
-    for lon, lat, label, offset in zip(lons, lats, labels, label_offsets):
-        is_today = label == today_city
+    label_styles = {
+        "today": dict(
+            text=dict(
+                fontweight="bold",
+                color="#3F2F1B",
+                bbox=dict(
+                    boxstyle="round,pad=0.34",
+                    facecolor="#FFE8B7",
+                    alpha=0.98,
+                    edgecolor="#F97316",
+                    linewidth=1.2,
+                ),
+                zorder=9,
+            ),
+            leader=dict(color="#D97706", linewidth=0.8, alpha=0.82),
+        ),
+        "recent": dict(
+            text=dict(
+                fontweight="normal",
+                color="#1F2937",
+                bbox=dict(
+                    boxstyle="round,pad=0.24",
+                    facecolor="#FFFBF3",
+                    alpha=0.92,
+                    edgecolor="#C9B894",
+                    linewidth=0.8,
+                ),
+                zorder=8,
+            ),
+            leader=dict(color="#8B6F47", linewidth=0.55, alpha=0.6),
+        ),
+        "regular": dict(
+            text=dict(
+                fontweight="normal",
+                color="#7C8894",
+                alpha=0.9,
+                zorder=4,
+            ),
+            leader=dict(color="#B3BCC6", linewidth=0.35, alpha=0.4),
+        ),
+    }
+
+    for lon, lat, label, offset, spec in zip(lons, lats, labels, label_offsets, specs):
+        style = label_styles[spec["kind"]]
         ha = "left" if offset[0] >= 0 else "right"
         leader_len = (offset[0] ** 2 + offset[1] ** 2) ** 0.5
         arrowprops = None
-        if leader_len >= 14 or is_today:
+        if leader_len >= CITY_MAP_LEADER_MIN_OFFSET_PTS:
             arrowprops = dict(
                 arrowstyle="-",
-                color="#D97706" if is_today else "#9AA7B3",
-                linewidth=0.8 if is_today else 0.45,
-                alpha=0.82 if is_today else 0.48,
                 shrinkA=2,
                 shrinkB=3,
+                **style["leader"],
             )
         ax.annotate(
             label,
             (lon, lat),
             textcoords="offset points",
             xytext=offset,
-            fontsize=10 if is_today else 8.5,
-            fontweight="bold" if is_today else "normal",
-            color="#3F2F1B" if is_today else "#334155",
+            fontsize=spec["fontsize"],
             ha=ha,
             va="center",
-            bbox=dict(
-                boxstyle="round,pad=0.34" if is_today else "round,pad=0.24",
-                facecolor="#FFE8B7" if is_today else "#FFFBF3",
-                alpha=0.98 if is_today else 0.9,
-                edgecolor="#F97316" if is_today else "#C9B894",
-                linewidth=1.2 if is_today else 0.8,
-            ),
             arrowprops=arrowprops,
-            zorder=6 if is_today else 4,
+            **style["text"],
         )
 
     title = (
