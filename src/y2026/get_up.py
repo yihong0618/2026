@@ -1162,9 +1162,7 @@ def _compute_label_offsets(lons, lats, labels, ax, specs, province_geoms=None):
         px, py = display_pts[i]
         w, h = label_sizes[i]
         candidates = (
-            regular_candidates
-            if specs[i]["kind"] == "regular"
-            else emphasis_candidates
+            regular_candidates if specs[i]["kind"] == "regular" else emphasis_candidates
         )
         best_offset = candidates[0]
         best_cost = float("inf")
@@ -1389,9 +1387,7 @@ def _render_cities_map(city_coords, today_city="", recent_cities=()):
         ),
     }
 
-    for lon, lat, label, offset, spec in zip(
-        lons, lats, labels, label_offsets, specs
-    ):
+    for lon, lat, label, offset, spec in zip(lons, lats, labels, label_offsets, specs):
         style = label_styles[spec["kind"]]
         ha = "left" if offset[0] >= 0 else "right"
         leader_len = (offset[0] ** 2 + offset[1] ** 2) ** 0.5
