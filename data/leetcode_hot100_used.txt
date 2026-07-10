@@ -49,3 +49,4 @@ merge-intervals
 permutations
 majority-element
 invert-binary-tree
+minimum-path-sum
