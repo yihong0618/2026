@@ -372,21 +372,29 @@ class GetUpMapTests(unittest.TestCase):
                     ) as compute_offsets,
                     mock.patch.object(Axes, "scatter", autospec=True) as scatter,
                 ):
-                    result = get_up._render_cities_map(city_coords, today_city="百色")
+                    result = get_up._render_cities_map(
+                        city_coords, today_city="百色", recent_cities=("上海", "百色")
+                    )
 
                 self.assertEqual(
                     result,
                     str(Path(tmpdir) / get_up.CITY_POSTERS_DIR / get_up.CITY_MAP_FILE),
                 )
                 self.assertTrue(Path(result).exists())
-                self.assertEqual(scatter.call_count, 2)
+                self.assertEqual(scatter.call_count, 3)
                 compute_offsets.assert_called_once()
-                args, kwargs = compute_offsets.call_args
+                args, _kwargs = compute_offsets.call_args
                 self.assertEqual(args[0], [116.4074, 121.4737, 106.6149])
                 self.assertEqual(args[1], [39.9042, 31.2304, 23.9054])
                 self.assertEqual(args[2], ["北京", "上海", "百色"])
-                self.assertEqual(kwargs["fontsize"], 8)
-                self.assertEqual(kwargs["priority_labels"], ("百色",))
+                specs = args[4]
+                self.assertEqual(
+                    [spec["kind"] for spec in specs],
+                    ["regular", "recent", "today"],
+                )
+                self.assertFalse(specs[0]["has_box"])
+                self.assertTrue(specs[1]["has_box"])
+                self.assertTrue(specs[2]["has_box"])
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
 
@@ -408,15 +416,11 @@ class GetUpMapTests(unittest.TestCase):
         ax.set_aspect("equal", adjustable="box")
         canvas.draw()
 
-        fontsize = 8
-        offsets = get_up._compute_label_offsets(
-            lons, lats, labels, ax, fontsize=fontsize, priority_labels=("北京",)
-        )
+        specs = get_up._city_label_specs(labels, "北京", ("北京", "天津", "廊坊"))
+        offsets = get_up._compute_label_offsets(lons, lats, labels, ax, specs)
 
         pts_to_px = fig.dpi / 72.0
-        label_sizes = get_up._measure_label_sizes(
-            labels, ax, fontsize=fontsize, priority_labels=("北京",)
-        )
+        label_sizes = get_up._measure_label_sizes(labels, ax, specs)
         boxes = []
         for lon, lat, label_size, offset in zip(lons, lats, label_sizes, offsets):
             px, py = ax.transData.transform((lon, lat))
