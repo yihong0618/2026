@@ -2316,7 +2316,7 @@ def _clean_selected_tg_links(links):
         clean_link = _strip_selected_tg_tag(link)
         parsed_link = urlparse(clean_link)
         if (
-            parsed_link.netloc == "t.me"
+            parsed_link.netloc == "telegram.me"
             and not parsed_link.path.strip("/")
             and "selected" in parsed_link.query.lower()
         ):
@@ -2391,7 +2391,7 @@ class _TelegramReplyParser(HTMLParser):
             href = attr_map.get("href", "").strip()
             if href:
                 self.reply_by_post[self._current_post] = urljoin(
-                    "https://t.me",
+                    "https://telegram.me",
                     href,
                 )
 

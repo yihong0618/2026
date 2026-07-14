@@ -16,7 +16,7 @@ DEFAULT_CHANNEL = "@hyi0618"
 DEFAULT_SELECTED_TAG = "#selected"
 DEFAULT_OUTPUT = "summaries/tg_weekly_summary.md"
 DEFAULT_MODEL = "gpt-4o-mini"
-TELEGRAM_ARCHIVE_URL = "https://t.me/s/{channel}"
+TELEGRAM_ARCHIVE_URL = "https://telegram.me/s/{channel}"
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/{method}"
 URL_RE = re.compile(r"https?://[^\s<>()\]）\"']+")
 SELECTED_TITLE_RE = re.compile(
@@ -98,7 +98,7 @@ class TelegramArchiveParser(HTMLParser):
 
         href = attr_map.get("href", "")
         if tag == "a" and href and self._collect_text:
-            self._current["links"].append(urljoin("https://t.me", href))
+            self._current["links"].append(urljoin("https://telegram.me", href))
 
     def handle_endtag(self, tag: str) -> None:
         if self._current is None:
@@ -146,7 +146,7 @@ class TelegramArchiveParser(HTMLParser):
             ChannelMessage(
                 message_id=message_id,
                 post=post,
-                url=f"https://t.me/{post}",
+                url=f"https://telegram.me/{post}",
                 date=date,
                 text=text,
                 links=links,
@@ -163,7 +163,7 @@ class TelegramArchiveParser(HTMLParser):
 
 
 def normalize_channel(channel: str) -> str:
-    return channel.strip().removeprefix("@").removeprefix("https://t.me/")
+    return channel.strip().removeprefix("@").removeprefix("https://telegram.me/")
 
 
 def normalize_message_text(text: str) -> str:
@@ -346,7 +346,7 @@ def fetch_bot_update_messages(
             ChannelMessage(
                 message_id=message_id,
                 post=f"{username}/{message_id}",
-                url=f"https://t.me/{username}/{message_id}" if username else "",
+                url=f"https://telegram.me/{username}/{message_id}" if username else "",
                 date=date,
                 text=text,
                 links=unique_links(links),

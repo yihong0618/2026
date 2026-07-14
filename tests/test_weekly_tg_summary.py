@@ -31,7 +31,7 @@ def test_telegram_archive_parser_extracts_text_date_and_links():
     assert len(parser.messages) == 1
     message = parser.messages[0]
     assert message.message_id == 123
-    assert message.url == "https://t.me/hyi0618/123"
+    assert message.url == "https://telegram.me/hyi0618/123"
     assert message.date.to_datetime_string() == "2026-05-28 10:30:00"
     assert message.text == "分享一篇文章 链接\n#selected"
     assert message.links == ("https://example.com/a",)
@@ -42,7 +42,7 @@ def test_render_markdown_keeps_selected_raw_material():
     message = weekly_tg_summary.ChannelMessage(
         message_id=123,
         post="hyi0618/123",
-        url="https://t.me/hyi0618/123",
+        url="https://telegram.me/hyi0618/123",
         date=pendulum.datetime(2026, 5, 28, 10, 30, tz=weekly_tg_summary.TIMEZONE),
         text="分享一篇文章 #selected",
         links=("https://example.com/a",),
@@ -62,17 +62,17 @@ def test_render_markdown_keeps_selected_raw_material():
 
     assert "# Telegram 周总结素材" in markdown
     assert "## #selected 原始素材" in markdown
-    assert "### [分享一篇文章](https://t.me/hyi0618/123)" in markdown
-    assert "- Telegram：[123](https://t.me/hyi0618/123)" in markdown
+    assert "### [分享一篇文章](https://telegram.me/hyi0618/123)" in markdown
+    assert "- Telegram：[123](https://telegram.me/hyi0618/123)" in markdown
     assert "https://example.com/a" in markdown
-    assert "05-28 10:30 [123](https://t.me/hyi0618/123) #selected" in markdown
+    assert "05-28 10:30 [123](https://telegram.me/hyi0618/123) #selected" in markdown
 
 
 def test_render_markdown_allows_empty_text_messages():
     message = weekly_tg_summary.ChannelMessage(
         message_id=124,
         post="hyi0618/124",
-        url="https://t.me/hyi0618/124",
+        url="https://telegram.me/hyi0618/124",
         date=pendulum.datetime(2026, 5, 28, 11, 30, tz=weekly_tg_summary.TIMEZONE),
         text="",
         links=(),
@@ -97,7 +97,7 @@ def test_link_selected_titles_to_telegram_links_title_lines():
     first = weekly_tg_summary.ChannelMessage(
         message_id=123,
         post="hyi0618/123",
-        url="https://t.me/hyi0618/123",
+        url="https://telegram.me/hyi0618/123",
         date=pendulum.datetime(2026, 5, 28, 10, 30, tz=weekly_tg_summary.TIMEZONE),
         text="The Eternal Sloptember #selected",
         links=("https://example.com/a",),
@@ -106,7 +106,7 @@ def test_link_selected_titles_to_telegram_links_title_lines():
     second = weekly_tg_summary.ChannelMessage(
         message_id=124,
         post="hyi0618/124",
-        url="https://t.me/hyi0618/124",
+        url="https://telegram.me/hyi0618/124",
         date=pendulum.datetime(2026, 5, 28, 11, 30, tz=weekly_tg_summary.TIMEZONE),
         text="Global Rail #selected",
         links=("https://example.com/b",),
@@ -130,8 +130,8 @@ def test_link_selected_titles_to_telegram_links_title_lines():
         markdown, [first, second], "#selected"
     )
 
-    assert "1. **[The Eternal Sloptember](https://t.me/hyi0618/123)**" in linked
-    assert "2. **[Global Rail](https://t.me/hyi0618/124)**" in linked
+    assert "1. **[The Eternal Sloptember](https://telegram.me/hyi0618/123)**" in linked
+    assert "2. **[Global Rail](https://telegram.me/hyi0618/124)**" in linked
     assert "[链接](https://example.com/a)" in linked
 
 

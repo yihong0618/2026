@@ -598,7 +598,7 @@ class GetUpClassicGameTests(unittest.TestCase):
                 first = get_up.weekly_tg_summary.ChannelMessage(
                     message_id=101,
                     post="hyi0618/101",
-                    url="https://t.me/hyi0618/101",
+                    url="https://telegram.me/hyi0618/101",
                     date=now,
                     text="第一篇 #selected",
                     links=("https://example.com/one",),
@@ -607,11 +607,11 @@ class GetUpClassicGameTests(unittest.TestCase):
                 second = get_up.weekly_tg_summary.ChannelMessage(
                     message_id=102,
                     post="hyi0618/102",
-                    url="https://t.me/hyi0618/102",
+                    url="https://telegram.me/hyi0618/102",
                     date=now,
                     text="第二篇 #selected\nhttps://example.com/two#selected",
                     links=(
-                        "https://t.me?q=%23selected",
+                        "https://telegram.me?q=%23selected",
                         "https://example.com/two#selected",
                     ),
                     source="web",
@@ -629,10 +629,10 @@ class GetUpClassicGameTests(unittest.TestCase):
                     result = get_up.get_classic_media_intro()
 
                 self.assertIn("今天选读：", result)
-                self.assertIn("[第二篇](https://t.me/hyi0618/102)", result)
+                self.assertIn("[第二篇](https://telegram.me/hyi0618/102)", result)
                 self.assertIn("链接：https://example.com/two", result)
                 self.assertNotIn("#selected", result)
-                self.assertNotIn("https://t.me?q=%23selected", result)
+                self.assertNotIn("https://telegram.me?q=%23selected", result)
                 self.assertNotIn("good old " + "days", result)
                 self.assertEqual(
                     (Path(tmpdir) / get_up.SELECTED_TG_USED_FILE)
@@ -649,7 +649,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         message = get_up.weekly_tg_summary.ChannelMessage(
             message_id=101,
             post="hyi0618/101",
-            url="https://t.me/hyi0618/101",
+            url="https://telegram.me/hyi0618/101",
             date=now,
             text=f"一篇很长的文章 #selected\n{long_url}",
             links=(long_url,),
@@ -671,7 +671,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         original = get_up.weekly_tg_summary.ChannelMessage(
             message_id=101,
             post="hyi0618/101",
-            url="https://t.me/hyi0618/101",
+            url="https://telegram.me/hyi0618/101",
             date=now,
             text=f"Foyer: A Hybrid Cache in Rust\n{full_url}",
             links=(full_url,),
@@ -680,7 +680,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         selected = get_up.weekly_tg_summary.ChannelMessage(
             message_id=102,
             post="hyi0618/102",
-            url="https://t.me/hyi0618/102",
+            url="https://telegram.me/hyi0618/102",
             date=now,
             text="Foyer: A Hybrid Cache in Rust https://blog.mrcroxx.com/posts/foyer-a-hybrid… #selected",
             links=("https://blog.mrcroxx.com/posts/foyer-a-hybrid…#selected",),
@@ -689,7 +689,7 @@ class GetUpClassicGameTests(unittest.TestCase):
 
         result = get_up._hydrate_selected_tg_reply_messages(
             [original, selected],
-            {"hyi0618/102": "https://t.me/hyi0618/101"},
+            {"hyi0618/102": "https://telegram.me/hyi0618/101"},
         )
         hydrated = result[1]
 
@@ -704,7 +704,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         selected = get_up.weekly_tg_summary.ChannelMessage(
             message_id=101,
             post="hyi0618/101",
-            url="https://t.me/hyi0618/101",
+            url="https://telegram.me/hyi0618/101",
             date=now,
             text="选中 #selected",
             links=(),
@@ -713,7 +713,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         regular = get_up.weekly_tg_summary.ChannelMessage(
             message_id=102,
             post="hyi0618/102",
-            url="https://t.me/hyi0618/102",
+            url="https://telegram.me/hyi0618/102",
             date=now,
             text="普通消息",
             links=(),
@@ -741,7 +741,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         cached = get_up.weekly_tg_summary.ChannelMessage(
             message_id=101,
             post="hyi0618/101",
-            url="https://t.me/hyi0618/101",
+            url="https://telegram.me/hyi0618/101",
             date=now,
             text="已缓存 #selected",
             links=(),
@@ -750,7 +750,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         new = get_up.weekly_tg_summary.ChannelMessage(
             message_id=103,
             post="hyi0618/103",
-            url="https://t.me/hyi0618/103",
+            url="https://telegram.me/hyi0618/103",
             date=now,
             text="新消息 #selected",
             links=(),
@@ -772,7 +772,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         selected = get_up.weekly_tg_summary.ChannelMessage(
             message_id=101,
             post="hyi0618/101",
-            url="https://t.me/hyi0618/101",
+            url="https://telegram.me/hyi0618/101",
             date=now,
             text="选中 #selected",
             links=("https://example.com/one",),
@@ -802,7 +802,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         cached = get_up.weekly_tg_summary.ChannelMessage(
             message_id=101,
             post="hyi0618/101",
-            url="https://t.me/hyi0618/101",
+            url="https://telegram.me/hyi0618/101",
             date=now,
             text="已缓存 #selected",
             links=(),
@@ -811,7 +811,7 @@ class GetUpClassicGameTests(unittest.TestCase):
         new = get_up.weekly_tg_summary.ChannelMessage(
             message_id=103,
             post="hyi0618/103",
-            url="https://t.me/hyi0618/103",
+            url="https://telegram.me/hyi0618/103",
             date=now,
             text="新消息 #selected",
             links=(),
