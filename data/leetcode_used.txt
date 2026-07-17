@@ -126,3 +126,4 @@ bank-account-summary-ii
 rank-transform-of-an-array
 binary-tree-inorder-traversal
 gcd-of-odd-and-even-sums
+find-greatest-common-divisor-of-array
