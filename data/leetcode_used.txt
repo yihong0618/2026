@@ -129,3 +129,4 @@ gcd-of-odd-and-even-sums
 find-greatest-common-divisor-of-array
 shift-2d-grid
 reformat-date
+finding-3-digit-even-numbers
