@@ -145,3 +145,4 @@ blog.shrp.me
 frostming.com
 overcooked.typlog.io
 roife.github.io
+blog.yuanji.dev
