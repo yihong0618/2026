@@ -130,3 +130,4 @@ find-greatest-common-divisor-of-array
 shift-2d-grid
 reformat-date
 finding-3-digit-even-numbers
+maximum-product-of-two-digits
