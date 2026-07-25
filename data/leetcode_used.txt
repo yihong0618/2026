@@ -131,3 +131,4 @@ shift-2d-grid
 reformat-date
 finding-3-digit-even-numbers
 maximum-product-of-two-digits
+maximum-product-of-three-numbers
