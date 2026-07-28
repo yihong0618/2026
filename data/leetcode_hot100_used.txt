@@ -56,3 +56,4 @@ sort-colors
 palindrome-linked-list
 longest-common-subsequence
 rotting-oranges
+daily-temperatures
