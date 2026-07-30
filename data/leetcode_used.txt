@@ -134,3 +134,4 @@ maximum-product-of-two-digits
 maximum-product-of-three-numbers
 maximum-product-of-two-elements-in-an-array
 count-common-words-with-one-occurrence
+base-7
