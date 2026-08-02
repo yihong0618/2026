@@ -136,3 +136,4 @@ maximum-product-of-two-elements-in-an-array
 count-common-words-with-one-occurrence
 base-7
 sales-analysis-iii
+longest-common-prefix
