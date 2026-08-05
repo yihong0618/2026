@@ -138,3 +138,4 @@ base-7
 sales-analysis-iii
 longest-common-prefix
 find-missing-elements
+smallest-divisible-digit-product-i
