@@ -161,3 +161,4 @@ hijiangtao.github.io
 blog.niclin.tw
 hermine.in
 folyd.com
+dosk.win
