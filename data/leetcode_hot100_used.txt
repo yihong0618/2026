@@ -62,3 +62,4 @@ set-matrix-zeroes
 subarray-sum-equals-k
 group-anagrams
 intersection-of-two-linked-lists
+3sum
