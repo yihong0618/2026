@@ -64,3 +64,4 @@ group-anagrams
 intersection-of-two-linked-lists
 3sum
 search-in-rotated-sorted-array
+move-zeroes
