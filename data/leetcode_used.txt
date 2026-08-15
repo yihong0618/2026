@@ -142,3 +142,4 @@ smallest-divisible-digit-product-i
 palindrome-number
 lian-xu-zi-shu-zu-de-zui-da-he-lcof
 smallest-missing-integer-greater-than-sequential-prefix-sum
+bu-ke-pai-zhong-de-shun-zi-lcof
