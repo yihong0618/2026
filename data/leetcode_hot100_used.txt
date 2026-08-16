@@ -66,3 +66,4 @@ intersection-of-two-linked-lists
 search-in-rotated-sorted-array
 move-zeroes
 kth-largest-element-in-an-array
+lru-cache
