@@ -149,3 +149,4 @@ remove-duplicates-from-sorted-array
 check-divisibility-by-digit-sum-and-product
 er-cha-sou-suo-shu-de-di-kda-jie-dian-lcof
 difference-between-element-sum-and-digit-sum-of-an-array
+smallest-missing-multiple-of-k
