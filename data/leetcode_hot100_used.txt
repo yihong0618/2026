@@ -70,3 +70,4 @@ lru-cache
 linked-list-cycle
 word-break
 longest-consecutive-sequence
+kth-smallest-element-in-a-bst
