@@ -158,3 +158,4 @@ shu-zu-zhong-chu-xian-ci-shu-chao-guo-yi-ban-de-shu-zi-lcof
 construct-uniform-parity-array-i
 smallest-stable-index-i
 smallest-index-with-digit-sum-equal-to-index
+product-sales-analysis-i
