@@ -165,3 +165,4 @@ classes-with-at-least-5-students
 unique-3-digit-even-numbers
 count-odd-numbers-in-an-interval-range
 student-attendance-record-i
+rectangle-overlap
