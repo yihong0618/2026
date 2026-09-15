@@ -73,3 +73,4 @@ longest-consecutive-sequence
 kth-smallest-element-in-a-bst
 validate-binary-search-tree
 house-robber
+jump-game
