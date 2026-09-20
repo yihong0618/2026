@@ -76,3 +76,4 @@ house-robber
 jump-game
 rotate-image
 combination-sum
+find-first-and-last-position-of-element-in-sorted-array
