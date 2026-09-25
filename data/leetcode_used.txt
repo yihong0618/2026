@@ -169,3 +169,4 @@ rectangle-overlap
 shun-shi-zhen-da-yin-ju-zhen-lcof
 reverse-degree-of-a-string
 categorize-box-according-to-criteria
+generate-tag-for-video-caption
