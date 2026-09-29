@@ -200,3 +200,4 @@ blog.outv.im
 drmingdrmer.github.io
 blog.lzc256.com
 mednoter.com
+kuricat.com
