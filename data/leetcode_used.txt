@@ -172,3 +172,4 @@ categorize-box-according-to-criteria
 generate-tag-for-video-caption
 maximum-nesting-depth-of-the-parentheses
 maximum-difference-by-remapping-a-digit
+maximum-count-of-positive-integer-and-negative-integer
