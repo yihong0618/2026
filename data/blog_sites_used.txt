@@ -203,3 +203,4 @@ mednoter.com
 kuricat.com
 antfu.me
 nptr.cc
+zinglix.xyz
