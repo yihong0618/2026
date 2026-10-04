@@ -204,3 +204,4 @@ kuricat.com
 antfu.me
 nptr.cc
 zinglix.xyz
+kwaa.dev
