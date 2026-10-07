@@ -543,6 +543,75 @@ class GetUpLeetCodeTests(unittest.TestCase):
             finally:
                 get_up.SCRIPT_DIR = original_script_dir
 
+    def test_daily_leetcode_moves_to_top150_after_hot100_is_done(self):
+        class StableRng:
+            def random(self):
+                return 0.1
+
+            def choice(self, values):
+                return values[0]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            original_script_dir = get_up.SCRIPT_DIR
+            get_up.SCRIPT_DIR = Path(tmpdir)
+            try:
+                data_dir = Path(tmpdir) / "data"
+                data_dir.mkdir()
+                (data_dir / "leetcode_easy.txt").write_text(
+                    "2|Fresh Easy|fresh-easy|EASY\n",
+                    encoding="utf-8",
+                )
+                (data_dir / "leetcode_used.txt").write_text("", encoding="utf-8")
+                (data_dir / "leetcode_hot100.txt").write_text(
+                    "1|Hot Done|hot-done|MEDIUM\n",
+                    encoding="utf-8",
+                )
+                (data_dir / "leetcode_hot100_used.txt").write_text(
+                    "hot-done\n",
+                    encoding="utf-8",
+                )
+                (data_dir / "leetcode_top150.txt").write_text(
+                    "\n".join(
+                        [
+                            "1|Hot Done|hot-done|MEDIUM",
+                            "3|Fresh Top|fresh-top|MEDIUM",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+
+                with (
+                    mock.patch.object(
+                        get_up,
+                        "_now",
+                        return_value=pendulum.datetime(
+                            2026,
+                            10,
+                            7,
+                            tz=get_up.TIMEZONE,
+                        ),
+                    ),
+                    mock.patch.object(
+                        get_up,
+                        "_get_leetcode_daily_question",
+                        return_value=None,
+                    ),
+                    mock.patch.object(get_up, "_daily_rng", return_value=StableRng()),
+                ):
+                    result = get_up.get_daily_leetcode()
+
+                self.assertIn("面试经典 150", result)
+                self.assertIn("Fresh Top", result)
+                self.assertEqual(
+                    (data_dir / "leetcode_top150_used.txt")
+                    .read_text(encoding="utf-8")
+                    .splitlines(),
+                    ["fresh-top"],
+                )
+            finally:
+                get_up.SCRIPT_DIR = original_script_dir
+
 
 class GetUpClassicGameTests(unittest.TestCase):
     def test_classic_media_from_wikidata_binding_uses_chinese_label_and_date(self):

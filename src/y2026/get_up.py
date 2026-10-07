@@ -53,6 +53,13 @@ LEETCODE_EASY_FILE = "data/leetcode_easy.txt"
 LEETCODE_USED_FILE = "data/leetcode_used.txt"
 LEETCODE_HOT100_FILE = "data/leetcode_hot100.txt"
 LEETCODE_HOT100_USED_FILE = "data/leetcode_hot100_used.txt"
+LEETCODE_TOP150_FILE = "data/leetcode_top150.txt"
+LEETCODE_TOP150_USED_FILE = "data/leetcode_top150_used.txt"
+# Study plans are tried in order; the next one starts once the previous is done.
+LEETCODE_STUDY_PLANS = (
+    ("热题 100", LEETCODE_HOT100_FILE, LEETCODE_HOT100_USED_FILE),
+    ("面试经典 150", LEETCODE_TOP150_FILE, LEETCODE_TOP150_USED_FILE),
+)
 BLOG_SITES_USED_FILE = "data/blog_sites_used.txt"
 CLASSIC_MEDIA_USED_FILE = "data/classic_media_used.txt"
 CHINESE_CITIES_FILE = "data/chinese_cities.txt"
@@ -409,14 +416,14 @@ def _format_easy_problem(problem, prefix="今日 LeetCode 🟢 简单题："):
     return f"{prefix}\n\n[{problem.problem_id}. {problem.title}]({problem.url})"
 
 
-def _format_hot100_problem(problem):
+def _format_study_plan_problem(problem, plan_name):
     diff_map = {
         "EASY": ("简单", "🟢"),
         "MEDIUM": ("中等", "🟡"),
     }
     diff_label, diff_emoji = diff_map.get(problem.difficulty, ("中等", "🟡"))
     return (
-        f"今日 LeetCode 热题 100 {diff_emoji} {diff_label}题：\n\n"
+        f"今日 LeetCode {plan_name} {diff_emoji} {diff_label}题：\n\n"
         f"[{problem.problem_id}. {problem.title}]({problem.url})"
     )
 
@@ -426,9 +433,13 @@ def get_daily_leetcode():
         now = _now()
         easy_file = _data_file_path(LEETCODE_EASY_FILE)
         easy_used_file = _data_file_path(LEETCODE_USED_FILE)
-        hot100_file = _data_file_path(LEETCODE_HOT100_FILE)
-        hot100_used_file = _data_file_path(LEETCODE_HOT100_USED_FILE)
-        global_used_files = (easy_used_file, hot100_used_file)
+        study_plans = [
+            (plan_name, _data_file_path(plan_file), _data_file_path(plan_used_file))
+            for plan_name, plan_file, plan_used_file in LEETCODE_STUDY_PLANS
+        ]
+        global_used_files = (easy_used_file,) + tuple(
+            plan_used_file for _, _, plan_used_file in study_plans
+        )
 
         results = []
         used_slugs = _load_used_problem_slugs(global_used_files)
@@ -447,16 +458,19 @@ def get_daily_leetcode():
             )
 
         if not results and _daily_rng(now, HOT100_RANDOM_SALT).random() < 0.5:
-            hot100_problem = _pick_problem_from_pool(
-                hot100_file,
-                hot100_used_file,
-                now,
-                global_used_files,
-            )
-            if hot100_problem:
-                results.append(_format_hot100_problem(hot100_problem))
+            for plan_name, plan_file, plan_used_file in study_plans:
+                plan_problem = _pick_problem_from_pool(
+                    plan_file,
+                    plan_used_file,
+                    now,
+                    global_used_files,
+                )
+                if plan_problem:
+                    results.append(_format_study_plan_problem(plan_problem, plan_name))
+                    break
             else:
-                results.append("热题 100 都做完啦！🎉")
+                plan_names = "、".join(plan_name for plan_name, _, _ in study_plans)
+                results.append(f"{plan_names} 都做完啦！🎉")
 
         if not results:
             easy_problem = _pick_problem_from_pool(
