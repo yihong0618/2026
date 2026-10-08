@@ -174,3 +174,4 @@ maximum-nesting-depth-of-the-parentheses
 maximum-difference-by-remapping-a-digit
 maximum-count-of-positive-integer-and-negative-integer
 que-shi-de-shu-zi-lcof
+count-elements-with-maximum-frequency
