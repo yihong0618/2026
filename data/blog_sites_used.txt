@@ -210,3 +210,4 @@ zgq.ink
 zhul.in
 youjiali1995.github.io
 blog.dylanwu.space
+suse.org.cn
