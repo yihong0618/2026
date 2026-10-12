@@ -177,3 +177,4 @@ que-shi-de-shu-zi-lcof
 count-elements-with-maximum-frequency
 er-cha-shu-de-shen-du-lcof
 sum-of-squares-of-special-elements
+count-number-of-pairs-with-absolute-difference-k
