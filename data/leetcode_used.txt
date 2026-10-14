@@ -179,3 +179,4 @@ er-cha-shu-de-shen-du-lcof
 sum-of-squares-of-special-elements
 count-number-of-pairs-with-absolute-difference-k
 last-stone-weight
+subarrays-distinct-element-sum-of-squares-i
