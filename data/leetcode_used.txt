@@ -181,3 +181,4 @@ count-number-of-pairs-with-absolute-difference-k
 last-stone-weight
 subarrays-distinct-element-sum-of-squares-i
 make-the-string-great
+count-prefix-and-suffix-pairs-i
