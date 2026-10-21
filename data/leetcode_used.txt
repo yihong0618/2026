@@ -185,3 +185,4 @@ count-prefix-and-suffix-pairs-i
 bao-han-minhan-shu-de-zhan-lcof
 yong-liang-ge-zhan-shi-xian-dui-lie-lcof
 binary-prefix-divisible-by-5
+roman-to-integer
