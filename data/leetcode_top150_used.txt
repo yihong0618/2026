@@ -9,3 +9,4 @@ construct-binary-tree-from-inorder-and-postorder-traversal
 gas-station
 simplify-path
 reverse-words-in-a-string
+game-of-life
