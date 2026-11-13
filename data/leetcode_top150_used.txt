@@ -10,3 +10,4 @@ gas-station
 simplify-path
 reverse-words-in-a-string
 game-of-life
+design-add-and-search-words-data-structure
