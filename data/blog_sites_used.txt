@@ -248,3 +248,4 @@ blog.guoqianfan.com
 localhost:1313
 kinnoukabokudo.com
 blog.ypingcn.com
+tcya.xyz
