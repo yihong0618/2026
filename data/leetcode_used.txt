@@ -203,3 +203,4 @@ greatest-common-divisor-of-strings
 minimum-moves-to-convert-string
 diao-zheng-shu-zu-shun-xu-shi-qi-shu-wei-yu-ou-shu-qian-mian-lcof
 check-if-all-as-appears-before-all-bs
+maximum-subarray-with-equal-products
