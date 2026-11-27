@@ -206,3 +206,4 @@ check-if-all-as-appears-before-all-bs
 maximum-subarray-with-equal-products
 cong-wei-dao-you-da-yin-lian-biao-lcof
 stone-removal-game
+split-with-minimum-sum
