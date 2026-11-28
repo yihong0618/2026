@@ -207,3 +207,4 @@ maximum-subarray-with-equal-products
 cong-wei-dao-you-da-yin-lian-biao-lcof
 stone-removal-game
 split-with-minimum-sum
+minimum-deletions-for-at-most-k-distinct-characters
